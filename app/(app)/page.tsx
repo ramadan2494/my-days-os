@@ -58,7 +58,7 @@ export default async function TodayPage() {
       {!hasMorningCheckin && <MorningCheckin userId={user.id} date={today} />}
 
       {/* Prayer Strip */}
-      <PrayerStrip prayers={prayers} userId={user.id} date={today} />
+      <PrayerStrip prayers={prayers} userId={user.id} date={today} profile={profile} />
 
       {/* Daily Score */}
       <DailyScoreCard score={score} profile={profile} />
