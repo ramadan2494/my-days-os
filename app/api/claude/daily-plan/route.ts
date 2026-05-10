@@ -89,13 +89,17 @@ Rules for schedule:
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-3-5-haiku-20241022',
+        model: 'claude-haiku-4-5',
         max_tokens: 2000,
         messages: [{ role: 'user', content: prompt }],
       }),
     })
 
-    if (!res.ok) return NextResponse.json({ error: 'AI service error' }, { status: 502 })
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({ error: 'Unknown' }))
+      console.error('Claude API error:', res.status, errBody)
+      return NextResponse.json({ error: `Claude API error: ${errBody?.error?.message ?? res.statusText}` }, { status: 502 })
+    }
 
     const claudeData = await res.json()
     const text = claudeData.content[0].text.trim()

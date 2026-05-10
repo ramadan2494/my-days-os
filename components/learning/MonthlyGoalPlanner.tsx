@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { TaskCategory } from '@/lib/supabase/types'
-import { Sparkles, Target, Calendar, Clock, CheckCircle2, X, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
+import { Sparkles, Calendar, Clock, CheckCircle2, X, ChevronDown, ChevronUp, Loader2, Flag, Target } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
@@ -16,6 +16,13 @@ const CATEGORY_COLORS: Record<TaskCategory, string> = {
   Personal: 'text-green-400 bg-green-500/10 border-green-500/20',
 }
 
+interface Week {
+  week_number: number
+  theme: string
+  focus: string
+  milestone: string
+}
+
 interface CreatedTask {
   title: string
   scheduled_date: string
@@ -26,15 +33,24 @@ interface CreatedTask {
 
 interface PlanResult {
   overview: string
+  weeks: Week[]
   tasks_created: number
   tasks: CreatedTask[]
 }
+
+const WEEK_COLORS = [
+  'border-purple-500/30 bg-purple-500/5',
+  'border-blue-500/30 bg-blue-500/5',
+  'border-cyan-500/30 bg-cyan-500/5',
+  'border-green-500/30 bg-green-500/5',
+  'border-yellow-500/30 bg-yellow-500/5',
+]
 
 export default function MonthlyGoalPlanner() {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<PlanResult | null>(null)
-  const [showAllTasks, setShowAllTasks] = useState(false)
+  const [expandedWeek, setExpandedWeek] = useState<number | null>(1)
 
   const [form, setForm] = useState({
     title: '',
@@ -44,7 +60,6 @@ export default function MonthlyGoalPlanner() {
     context: '',
   })
 
-  // Default deadline = 30 days from now
   const defaultDeadline = () => {
     const d = new Date()
     d.setDate(d.getDate() + 30)
@@ -63,7 +78,7 @@ export default function MonthlyGoalPlanner() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: form.title,
-          deadline: form.deadline,
+          deadline: form.deadline || defaultDeadline(),
           hoursPerDay: form.hoursPerDay,
           category: form.category,
           context: form.context,
@@ -78,7 +93,8 @@ export default function MonthlyGoalPlanner() {
       }
 
       setResult(data)
-      toast.success(`✨ ${data.tasks_created} tasks scheduled across your timeline!`)
+      setExpandedWeek(1)
+      toast.success(`✨ ${data.tasks_created} tasks scheduled across ${data.weeks?.length ?? '?'} weeks!`)
     } catch {
       toast.error('Network error. Try again.')
     } finally {
@@ -86,9 +102,17 @@ export default function MonthlyGoalPlanner() {
     }
   }
 
-  const visibleTasks = result
-    ? showAllTasks ? result.tasks : result.tasks.slice(0, 5)
-    : []
+  // Group tasks by week_number (fall back to date-based grouping)
+  const tasksByWeek = result?.tasks.reduce((acc: Record<number, CreatedTask[]>, task) => {
+    const taskDate = new Date(task.scheduled_date + 'T12:00:00')
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const dayOffset = Math.floor((taskDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    const week = Math.floor(dayOffset / 7) + 1
+    if (!acc[week]) acc[week] = []
+    acc[week].push(task)
+    return acc
+  }, {}) ?? {}
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
@@ -103,7 +127,7 @@ export default function MonthlyGoalPlanner() {
           </div>
           <div className="text-left">
             <h2 className="font-semibold text-white">AI Monthly Goal Planner</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Set a goal → Claude schedules daily tasks to hit it</p>
+            <p className="text-xs text-slate-400 mt-0.5">Set a goal → Claude builds a week-by-week plan with daily tasks</p>
           </div>
         </div>
         {open ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
@@ -127,7 +151,6 @@ export default function MonthlyGoalPlanner() {
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                {/* Deadline */}
                 <div>
                   <label className="block text-sm text-slate-400 mb-1.5">
                     <Calendar size={12} className="inline mr-1" />Deadline
@@ -141,8 +164,6 @@ export default function MonthlyGoalPlanner() {
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-500 transition-colors text-sm"
                   />
                 </div>
-
-                {/* Hours/day */}
                 <div>
                   <label className="block text-sm text-slate-400 mb-1.5">
                     <Clock size={12} className="inline mr-1" />Hours/day
@@ -201,74 +222,108 @@ export default function MonthlyGoalPlanner() {
                 {loading ? (
                   <>
                     <Loader2 size={16} className="animate-spin" />
-                    Claude is building your plan...
+                    Claude is building your week-by-week plan...
                   </>
                 ) : (
                   <>
                     <Sparkles size={16} />
-                    Generate Daily Task Plan
+                    Generate Monthly Plan
                   </>
                 )}
               </button>
-
-              <p className="text-center text-xs text-slate-600">
-                Claude will schedule {Math.ceil(30)} daily tasks in your Work page
-              </p>
             </form>
           ) : (
             <div className="space-y-4">
-              {/* Success header */}
+              {/* Overview */}
               <div className="flex items-start gap-3 p-4 bg-green-500/10 border border-green-500/20 rounded-xl">
                 <CheckCircle2 size={20} className="text-green-400 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-medium text-green-400 text-sm">{result.tasks_created} tasks scheduled!</p>
-                  <p className="text-slate-400 text-xs mt-1">{result.overview}</p>
+                  <p className="font-medium text-green-400 text-sm">{result.tasks_created} tasks scheduled across {result.weeks.length} weeks</p>
+                  <p className="text-slate-300 text-xs mt-1 leading-relaxed">{result.overview}</p>
                 </div>
               </div>
 
-              {/* Task preview */}
+              {/* Week-by-week breakdown */}
               <div className="space-y-2">
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">First tasks scheduled</p>
-                {visibleTasks.map((task, i) => (
-                  <div key={i} className="flex items-start gap-3 p-3 bg-slate-800 rounded-xl">
-                    <div className={cn(
-                      'w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0',
-                      task.priority === 'high' ? 'bg-red-500' :
-                      task.priority === 'medium' ? 'bg-yellow-500' : 'bg-slate-500'
-                    )} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-white font-medium">{task.title}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-xs text-slate-500">{task.scheduled_date}</span>
-                        <span className="text-xs text-slate-600">·</span>
-                        <span className="text-xs text-slate-500">{task.estimated_minutes}min</span>
-                        {task.is_deep_work && <span className="text-xs text-purple-400">🧠</span>}
-                      </div>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+                  <Target size={11} /> Week-by-Week Plan
+                </p>
+                {result.weeks.map((week, i) => {
+                  const weekTasks = tasksByWeek[week.week_number] ?? []
+                  const isOpen = expandedWeek === week.week_number
+                  return (
+                    <div key={week.week_number} className={cn('rounded-xl border overflow-hidden', WEEK_COLORS[i % WEEK_COLORS.length])}>
+                      <button
+                        onClick={() => setExpandedWeek(isOpen ? null : week.week_number)}
+                        className="w-full flex items-center justify-between p-3"
+                      >
+                        <div className="flex items-center gap-3 text-left">
+                          <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0">
+                            <span className="text-xs font-bold text-white">W{week.week_number}</span>
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-white">{week.theme}</p>
+                            <p className="text-xs text-slate-400">{weekTasks.length} tasks</p>
+                          </div>
+                        </div>
+                        {isOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+                      </button>
+
+                      {isOpen && (
+                        <div className="px-3 pb-3 space-y-2">
+                          {/* Focus & milestone */}
+                          <div className="p-2.5 bg-slate-900/60 rounded-lg">
+                            <p className="text-xs text-slate-400">{week.focus}</p>
+                            <div className="flex items-start gap-1.5 mt-1.5">
+                              <Flag size={11} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+                              <p className="text-xs text-yellow-400">{week.milestone}</p>
+                            </div>
+                          </div>
+                          {/* Tasks this week */}
+                          {weekTasks.length > 0 && (
+                            <div className="space-y-1.5">
+                              {weekTasks.map((task, j) => (
+                                <div key={j} className="flex items-start gap-2 p-2 bg-slate-900/40 rounded-lg">
+                                  <div className={cn(
+                                    'w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0',
+                                    task.priority === 'high' ? 'bg-red-400' :
+                                    task.priority === 'medium' ? 'bg-yellow-400' : 'bg-slate-500'
+                                  )} />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-white font-medium leading-tight">{task.title}</p>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <span className="text-[10px] text-slate-500">{task.scheduled_date}</span>
+                                      <span className="text-[10px] text-slate-600">·</span>
+                                      <span className="text-[10px] text-slate-500">{task.estimated_minutes}min</span>
+                                      {task.is_deep_work && <span className="text-[10px] text-purple-400">🧠 deep</span>}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
-                {result.tasks.length > 5 && (
-                  <button
-                    onClick={() => setShowAllTasks(!showAllTasks)}
-                    className="text-xs text-purple-400 hover:text-purple-300 transition-colors"
-                  >
-                    {showAllTasks ? 'Show less' : `+${result.tasks.length - 5} more tasks`}
-                  </button>
-                )}
+                  )
+                })}
               </div>
 
               <div className="flex gap-2">
                 <button
-                  onClick={() => { setResult(null); setForm({ title: '', deadline: '', hoursPerDay: 2, category: 'PhD', context: '' }) }}
+                  onClick={() => {
+                    setResult(null)
+                    setForm({ title: '', deadline: '', hoursPerDay: 2, category: 'PhD', context: '' })
+                  }}
                   className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm text-slate-300 transition-colors"
                 >
                   Plan Another Goal
                 </button>
                 <button
                   onClick={() => setOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm text-slate-300 transition-colors"
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 transition-colors"
                 >
-                  <X size={14} />
+                  <X size={14} className="text-slate-400" />
                 </button>
               </div>
             </div>
@@ -278,3 +333,4 @@ export default function MonthlyGoalPlanner() {
     </div>
   )
 }
+
