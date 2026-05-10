@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 import { todayISO, getLevelTitle, formatTime } from '@/lib/utils'
 import PrayerStrip from '@/components/today/PrayerStrip'
 import DailyScoreCard from '@/components/today/DailyScoreCard'
@@ -10,7 +11,7 @@ import { Zap, Flame, Target } from 'lucide-react'
 export default async function TodayPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+  if (!user) redirect('/login')
 
   const today = todayISO()
 
