@@ -1,36 +1,84 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MyDayOS 🕌
 
-## Getting Started
+A gamified personal life OS for a PhD student — built with Next.js, Tailwind CSS, Supabase, and Claude AI.
 
-First, run the development server:
+## Stack
+
+- **Next.js 16** — App Router, TypeScript
+- **Tailwind CSS** — dark-first UI, no CSS files
+- **Supabase** — database, auth, real-time
+- **Claude (claude-3-5-haiku)** — AI coaching and learning plans
+
+## Setup
+
+### 1. Clone & install
+
+```bash
+npm install
+```
+
+### 2. Create Supabase project
+
+1. Go to [supabase.com](https://supabase.com) → New Project
+2. In SQL Editor, run the full `supabase/schema.sql` (includes migration at the bottom)
+3. Enable Google OAuth under Authentication → Providers (optional)
+
+### 3. Environment variables
+
+```bash
+cp .env.local.example .env.local
+```
+
+Fill in:
+- `NEXT_PUBLIC_SUPABASE_URL` — from Project Settings → API
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` — from Project Settings → API
+- `CLAUDE_API_KEY` — from [console.anthropic.com](https://console.anthropic.com)
+
+### 4. Run locally
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 5. Deploy to Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npx vercel
+```
 
-## Learn More
+Add the same env vars in Vercel dashboard → Project → Settings → Environment Variables.
 
-To learn more about Next.js, take a look at the following resources:
+## Features
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Module | Description |
+|--------|-------------|
+| Today | Dashboard with prayer strip, task list, timeline, morning check-in |
+| Prayer | 5-prayer tracker, Qibla, 30-day heatmap, XP gamification |
+| Work | Kanban + Pomodoro timer + Deep Work mode + task CRUD |
+| Learning | Goal creation, AI plan generation (Claude), session tracking |
+| Family | Protected time blocks, quick moment logging, weekly report |
+| Coaching | Morning coaching, CBT tips, PhD coaching, wellbeing pulse, burnout detection |
+| Profile | XP/level/badges, daily score chart, streaks |
+| Settings | Prayer method, location, work hours, notification offset |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## XP System
 
-## Deploy on Vercel
+| Action | XP |
+|--------|----|
+| Prayer on-time | 30 |
+| Prayer late | 10 |
+| Task high priority | 40 |
+| Task medium | 25 |
+| Task low | 15 |
+| Deep Work task | x2 |
+| Pomodoro session | 20 |
+| Family event done | 20 |
+| Learning session done | ~30/hr |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Level Titles
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1 Day One → 2 Awakened Mind → 3 Focused Seeker → 4 Disciplined Scholar →
+5 Knowledge Seeker → 6 Present Father → 7 Focused Scholar → 8 Devoted Servant →
+9 Master of Days → 10 Life Architect
