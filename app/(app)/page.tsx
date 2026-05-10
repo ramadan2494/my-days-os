@@ -6,7 +6,8 @@ import DailyScoreCard from '@/components/today/DailyScoreCard'
 import TodayTasks from '@/components/today/TodayTasks'
 import DailyTimeline from '@/components/today/DailyTimeline'
 import MorningCheckin from '@/components/today/MorningCheckin'
-import { Zap, Flame, Target } from 'lucide-react'
+import AIDayPlanner from '@/components/today/AIDayPlanner'
+import { Zap, Flame } from 'lucide-react'
 
 export default async function TodayPage() {
   const supabase = await createClient()
@@ -56,6 +57,9 @@ export default async function TodayPage() {
 
       {/* Morning check-in if not done */}
       {!hasMorningCheckin && <MorningCheckin userId={user.id} date={today} />}
+
+      {/* AI Day Planner */}
+      <AIDayPlanner />
 
       {/* Prayer Strip */}
       <PrayerStrip prayers={prayers} userId={user.id} date={today} profile={profile} />

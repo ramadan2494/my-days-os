@@ -33,7 +33,10 @@ export async function POST(request: Request) {
     xp_earned: 0,
   }))
 
-  const { error } = await supabase.from('prayers').upsert(inserts, { onConflict: 'user_id,date,name' })
+  const { error } = await supabase.from('prayers').upsert(inserts, {
+    onConflict: 'user_id,date,name',
+    ignoreDuplicates: true, // never overwrite status of already-recorded prayers
+  })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({ times, message: 'Prayer times synced successfully' })
