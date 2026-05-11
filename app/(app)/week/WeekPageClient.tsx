@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { WeekPlan, WeeklyItem, DailyItem, Category } from '@/lib/supabase/types'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Grid3X3, List, Trash2, Sparkles } from 'lucide-react'
+import { Plus, Grid3X3, List, Trash2, Sparkles, RotateCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 import WeekGrid from '@/components/weekly/WeekGrid'
@@ -38,6 +38,7 @@ export default function WeekPageClient({
   const [showCreator, setShowCreator] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
   const [distributing, setDistributing] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const [form, setForm] = useState({
     title: '',
     category_id: '',
@@ -107,6 +108,7 @@ export default function WeekPageClient({
             id: it.id,
             title: it.title,
             category_id: it.category_id,
+            category_name: it.categories?.name ?? '',
             target_days: it.target_days,
             priority: it.priority,
           })),
@@ -131,6 +133,22 @@ export default function WeekPageClient({
     }
   }
 
+  async function clearPlan() {
+    if (!weekPlan) return
+    if (!confirm('Clear all items and distributed tasks for this week? This cannot be undone.')) return
+    setClearing(true)
+    try {
+      await supabase.from('daily_items').delete().eq('week_plan_id', weekPlan.id)
+      await supabase.from('weekly_items').delete().eq('week_plan_id', weekPlan.id)
+      setWeeklyItems([])
+      setDailyItems([])
+      setTab('plan')
+      toast.success('Week plan cleared — start fresh!')
+    } finally {
+      setClearing(false)
+    }
+  }
+
   function onAIItemsCreated(newItems: (WeeklyItem & { categories?: Category })[]) {
     setWeeklyItems((prev) => [...prev, ...newItems])
     setShowCreator(false)
@@ -146,6 +164,17 @@ export default function WeekPageClient({
           <p className="text-slate-400 text-sm mt-0.5">{weekLabel}</p>
         </div>
         <div className="flex items-center gap-2">
+          {(weeklyItems.length > 0 || dailyItems.length > 0) && (
+            <button
+              onClick={clearPlan}
+              disabled={clearing}
+              title="Clear plan and start fresh"
+              className="flex items-center gap-1.5 px-3 py-2 bg-red-900/40 hover:bg-red-800/60 border border-red-800/50 text-red-400 text-sm font-medium rounded-xl disabled:opacity-50 transition-colors"
+            >
+              <RotateCcw size={14} />
+              {clearing ? 'Clearing…' : 'New Plan'}
+            </button>
+          )}
           <button
             onClick={() => setShowCreator(true)}
             className="flex items-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-xl transition-colors"

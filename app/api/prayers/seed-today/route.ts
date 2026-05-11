@@ -3,14 +3,23 @@ import { NextResponse } from 'next/server'
 
 const PRAYER_NAMES = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']
 
-export async function POST() {
+export async function POST(request: Request) {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const today = new Date().toISOString().split('T')[0]
+  // Accept date from client (local time) so timezone offsets don't produce wrong day
+  let today: string
+  try {
+    const body = await request.json().catch(() => ({}))
+    today = typeof body?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.date)
+      ? body.date
+      : new Date().toISOString().split('T')[0]
+  } catch {
+    today = new Date().toISOString().split('T')[0]
+  }
 
   const { data: existing } = await supabase
     .from('daily_items')

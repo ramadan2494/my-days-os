@@ -14,6 +14,8 @@ import {
   Circle,
   SkipForward,
   Clock,
+  RotateCcw,
+  RefreshCw,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -65,17 +67,50 @@ function formatDate(dateStr: string) {
   })
 }
 
+function getLocalDateStr(d = new Date()) {
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('-')
+}
+
 export default function TodayPageClient({ userId, profile, initialItems, date }: Props) {
   const [items, setItems] = useState(initialItems)
   const [xpFloats, setXpFloats] = useState<XPFloat[]>([])
   const [currentProfile, setCurrentProfile] = useState(profile)
-  const [seeding, setSeeding] = useState(false)
   const router = useRouter()
   const supabase = createClient()
   const floatCounter = useRef(0)
+  const seedingRef = useRef(false)
 
-  const todayStr = new Date().toISOString().split('T')[0]
+  // Compute client-side local date (server runs UTC so it may be off by ±1 day)
+  const todayStr = getLocalDateStr()
   const isCurrentDay = date === todayStr
+
+  // If server guessed the wrong date (UTC offset), silently re-fetch client-side — no redirect
+  // When router.refresh() runs, server sends new initialItems — sync them into state
+  useEffect(() => {
+    setItems(initialItems)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialItems])
+
+  const [dateReady, setDateReady] = useState(true)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (!params.has('date') && date !== todayStr) {
+      // Don't redirect — just fetch the correct day's data directly
+      supabase
+        .from('daily_items')
+        .select('*, categories(*)')
+        .eq('user_id', userId)
+        .eq('scheduled_date', todayStr)
+        .order('created_at')
+        .then(({ data }) => { if (data) setItems(data) })
+      router.replace(`/?date=${todayStr}`, { scroll: false })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const prayerItems = items
     .filter((it) => (it.categories as Category)?.name === 'Prayers')
@@ -83,11 +118,15 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
 
   const taskItems = items.filter((it) => (it.categories as Category)?.name !== 'Prayers')
 
-  // Seed today's prayers if missing
+  // Seed today's prayers if missing — use ref to prevent StrictMode double-call
   useEffect(() => {
-    if (isCurrentDay && prayerItems.length === 0 && !seeding) {
-      setSeeding(true)
-      fetch('/api/prayers/seed-today', { method: 'POST' })
+    if (isCurrentDay && prayerItems.length === 0 && !seedingRef.current) {
+      seedingRef.current = true
+      fetch('/api/prayers/seed-today', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: todayStr }),
+      })
         .then((r) => r.json())
         .then(async (data) => {
           if (data.created > 0) {
@@ -100,7 +139,7 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
             if (newItems) setItems(newItems)
           }
         })
-        .finally(() => setSeeding(false))
+        .catch(() => { seedingRef.current = false })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -108,13 +147,13 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
   function prevDay() {
     const d = new Date(date + 'T12:00:00')
     d.setDate(d.getDate() - 1)
-    router.push(`/?date=${d.toISOString().split('T')[0]}`)
+    router.push(`/?date=${getLocalDateStr(d)}`)
   }
 
   function nextDay() {
     const d = new Date(date + 'T12:00:00')
     d.setDate(d.getDate() + 1)
-    const next = d.toISOString().split('T')[0]
+    const next = getLocalDateStr(d)
     if (next > todayStr) return
     router.push(`/?date=${next}`)
   }
@@ -170,8 +209,34 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
 
   async function handlePrayer(
     item: DailyItem & { categories?: Category },
-    action: 'on_time' | 'late' | 'skipped',
+    action: 'on_time' | 'late' | 'skipped' | 'undo',
   ) {
+    // Undo: reset prayer back to pending and remove XP
+    if (action === 'undo') {
+      const xpToRemove = item.xp_earned ?? 0
+      const { data, error } = await supabase
+        .from('daily_items')
+        .update({ status: 'pending', xp_earned: 0, completed_at: null })
+        .eq('id', item.id)
+        .select('*, categories(*)')
+        .single()
+      if (error) { toast.error('Failed to undo prayer'); return }
+      setItems((prev) => prev.map((it) => (it.id === item.id ? data : it)))
+      if (xpToRemove > 0) {
+        const { data: profile } = await supabase.from('profiles').select('xp, level').eq('id', userId).single()
+        const newXp = Math.max(0, (profile?.xp ?? 0) - xpToRemove)
+        const newLevel = Math.max(1, Math.floor(newXp / 500) + 1)
+        await supabase.from('profiles').update({ xp: newXp, level: newLevel, updated_at: new Date().toISOString() }).eq('id', userId)
+        await supabase.from('xp_log').delete().eq('source_id', item.id)
+        setCurrentProfile((prev) => prev ? { ...prev, xp: newXp, level: newLevel } : prev)
+        spawnFloat(-xpToRemove)
+        toast(`↩️ ${item.title} reset — -${xpToRemove} XP`, { style: { background: '#1e293b', color: '#f87171' } })
+      } else {
+        toast(`↩️ ${item.title} reset`, { style: { background: '#1e293b', color: '#94a3b8' } })
+      }
+      return
+    }
+
     if (item.status !== 'pending') return
 
     const newStatus: DailyItemStatus = action === 'skipped' ? 'skipped' : 'done'
@@ -208,27 +273,69 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
   }
 
   async function handleToggleItem(item: DailyItem & { categories?: Category }) {
-    if (item.status === 'done') return
+    if (item.status === 'done') {
+      // Uncheck: revert to pending and subtract XP
+      const xpToRemove = item.xp_earned ?? 0
+      const { data, error } = await supabase
+        .from('daily_items')
+        .update({ status: 'pending', xp_earned: 0, completed_at: null })
+        .eq('id', item.id)
+        .select('*, categories(*)')
+        .single()
+      if (error) { toast.error('Failed to uncheck task'); return }
+      setItems((prev) => prev.map((it) => (it.id === item.id ? data : it)))
+      if (xpToRemove > 0) {
+        // Subtract XP from profile
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('xp, level')
+          .eq('id', userId)
+          .single()
+        const newXp = Math.max(0, (profile?.xp ?? 0) - xpToRemove)
+        const newLevel = Math.max(1, Math.floor(newXp / 500) + 1)
+        await supabase
+          .from('profiles')
+          .update({ xp: newXp, level: newLevel, updated_at: new Date().toISOString() })
+          .eq('id', userId)
+        // Remove the xp_log entry for this item
+        await supabase.from('xp_log').delete().eq('source_id', item.id)
+        setCurrentProfile((prev) => prev ? { ...prev, xp: newXp, level: newLevel } : prev)
+        spawnFloat(-xpToRemove)
+        toast(`-${xpToRemove} XP removed`, {
+          icon: '↩️',
+          style: { background: '#1e293b', color: '#f87171' },
+        })
+      }
+      return
+    }
 
+    // Check: mark done and award XP
+    const categoryName = (item.categories as Category)?.name ?? ''
+    const priority = 'medium'
+    const xpEarned = priority === 'high' ? 25 : 15
     const { data, error } = await supabase
       .from('daily_items')
-      .update({ status: 'done', xp_earned: 15, completed_at: new Date().toISOString() })
+      .update({ status: 'done', xp_earned: xpEarned, completed_at: new Date().toISOString() })
       .eq('id', item.id)
       .select('*, categories(*)')
       .single()
-
-    if (error) {
-      toast.error('Failed to update task')
-      return
-    }
+    if (error) { toast.error('Failed to update task'); return }
     setItems((prev) => prev.map((it) => (it.id === item.id ? data : it)))
-    await awardXP(item.id, (item.categories as Category)?.name ?? '', false)
+    await awardXP(item.id, categoryName, false)
   }
 
   const doneCount = items.filter((it) => it.status !== 'pending').length
   const totalCount = items.length
   const xp = currentProfile?.xp ?? 0
   const level = currentProfile?.level ?? 1
+
+  if (!dateReady) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-slate-500 text-sm animate-pulse">Loading today…</div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5 relative">
@@ -257,6 +364,13 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
           </p>
         </div>
         <div className="flex items-center gap-1.5 mt-1">
+          <button
+            onClick={() => router.refresh()}
+            title="Sync latest changes"
+            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+          >
+            <RefreshCw size={16} />
+          </button>
           <button
             onClick={prevDay}
             className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
@@ -347,7 +461,7 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
 
         {prayerItems.length === 0 ? (
           <p className="text-slate-500 text-sm text-center py-4">
-            {seeding
+            {seedingRef.current
               ? 'Setting up prayers...'
               : 'No prayers yet. Configure your location in Settings to sync prayer times.'}
           </p>
@@ -396,22 +510,31 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
                     </button>
                   </div>
                 ) : (
-                  <span
-                    className={cn(
-                      'text-xs font-medium px-2 py-1 rounded-lg flex-shrink-0',
-                      item.status === 'done' && item.xp_earned === 20 &&
-                        'bg-green-500/20 text-green-400',
-                      item.status === 'done' && item.xp_earned === 8 &&
-                        'bg-yellow-500/20 text-yellow-400',
-                      item.status === 'skipped' && 'bg-slate-700 text-slate-500',
-                    )}
-                  >
-                    {item.status === 'skipped'
-                      ? 'Skipped'
-                      : item.xp_earned === 20
-                        ? 'On Time ✓'
-                        : 'Late ✓'}
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <span
+                      className={cn(
+                        'text-xs font-medium px-2 py-1 rounded-lg',
+                        item.status === 'done' && item.xp_earned === 20 &&
+                          'bg-green-500/20 text-green-400',
+                        item.status === 'done' && item.xp_earned === 8 &&
+                          'bg-yellow-500/20 text-yellow-400',
+                        item.status === 'skipped' && 'bg-slate-700 text-slate-500',
+                      )}
+                    >
+                      {item.status === 'skipped'
+                        ? 'Skipped'
+                        : item.xp_earned === 20
+                          ? 'On Time ✓'
+                          : 'Late ✓'}
+                    </span>
+                    <button
+                      onClick={() => handlePrayer(item, 'undo')}
+                      title="Undo"
+                      className="p-1 rounded-lg bg-slate-700 hover:bg-red-900/50 text-slate-400 hover:text-red-400 transition-colors"
+                    >
+                      <RotateCcw size={11} />
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
@@ -419,74 +542,147 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
         )}
       </div>
 
-      {/* Tasks Section */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-        <h2 className="font-semibold text-white flex items-center gap-2 mb-4">
-          <span>✅</span> Today&apos;s Tasks
-          <span className="ml-auto text-xs text-slate-500 font-normal">
-            {taskItems.filter((t) => t.status === 'done').length}/{taskItems.length}
-          </span>
-        </h2>
+      {/* Tasks — grouped by category section */}
+      {taskItems.length === 0 ? (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center">
+          <p className="text-slate-400 text-sm">No tasks for today</p>
+          <a href="/week" className="text-blue-400 text-sm hover:underline mt-1 inline-block">
+            Plan your week →
+          </a>
+        </div>
+      ) : (
+        <TaskSections items={taskItems} onToggle={handleToggleItem} />
+      )}
+    </div>
+  )
+}
 
-        {taskItems.length === 0 ? (
-          <div className="text-center py-8">
-            <p className="text-slate-400 text-sm">No tasks for today</p>
-            <a
-              href="/week"
-              className="text-blue-400 text-sm hover:underline mt-1 inline-block"
-            >
-              Plan your week →
-            </a>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {taskItems.map((item) => {
-              const cat = item.categories as Category | undefined
-              return (
-                <div
-                  key={item.id}
-                  className={cn(
-                    'flex items-center gap-3 p-3 bg-slate-800 rounded-xl transition-all',
-                    item.status === 'done' && 'opacity-60',
-                  )}
-                >
-                  <button
-                    onClick={() => handleToggleItem(item)}
-                    disabled={item.status !== 'pending'}
-                    className="flex-shrink-0 text-slate-400 hover:text-green-400 disabled:cursor-default transition-colors"
-                  >
-                    {item.status === 'done' ? (
-                      <CheckCircle size={18} className="text-green-400" />
-                    ) : (
-                      <Circle size={18} />
-                    )}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <p
-                      className={cn(
-                        'text-sm',
-                        item.status === 'done' ? 'text-slate-500 line-through' : 'text-white',
-                      )}
-                    >
-                      {item.title}
-                    </p>
-                    {cat && (
-                      <span className="text-[10px] font-medium" style={{ color: cat.color }}>
-                        {cat.icon} {cat.name}
-                      </span>
-                    )}
-                  </div>
-                  {item.status === 'done' && item.xp_earned > 0 && (
-                    <span className="text-xs text-yellow-400 font-medium flex-shrink-0">
-                      +{item.xp_earned} XP
-                    </span>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+// ─── Category group definitions ────────────────────────────────────────────────
+const TASK_SECTIONS = [
+  {
+    key: 'work',
+    label: 'Work',
+    icon: '💼',
+    accent: '#3b82f6',
+    match: (name: string) => name === 'Work',
+  },
+  {
+    key: 'knowledge',
+    label: 'Learning & PhD & Book',
+    icon: '🎓',
+    accent: '#8b5cf6',
+    match: (name: string) => ['Learning', 'PhD', 'Book'].includes(name),
+  },
+  {
+    key: 'business',
+    label: 'Business',
+    icon: '📈',
+    accent: '#06b6d4',
+    match: (name: string) => name === 'Business',
+  },
+  {
+    key: 'family',
+    label: 'Family',
+    icon: '👨‍👩‍👦',
+    accent: '#f97316',
+    match: (name: string) => name === 'Family',
+  },
+  {
+    key: 'softskill',
+    label: 'Soft Skills',
+    icon: '🧠',
+    accent: '#14b8a6',
+    match: (name: string) => name === 'Soft Skill',
+  },
+  {
+    key: 'other',
+    label: 'Other',
+    icon: '📌',
+    accent: '#64748b',
+    match: (name: string) =>
+      !['Work', 'Learning', 'PhD', 'Book', 'Business', 'Family', 'Soft Skill'].includes(name),
+  },
+]
+
+function TaskRow({
+  item,
+  onToggle,
+}: {
+  item: DailyItem & { categories?: Category }
+  onToggle: (item: DailyItem & { categories?: Category }) => void
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-3 p-3 bg-slate-800/60 rounded-xl transition-all',
+        item.status === 'done' && 'opacity-55',
+      )}
+    >
+      <button
+        onClick={() => onToggle(item)}
+        title={item.status === 'done' ? 'Click to uncheck' : 'Mark as done'}
+        className={cn(
+          'flex-shrink-0 transition-colors',
+          item.status === 'done'
+            ? 'text-green-400 hover:text-red-400'
+            : 'text-slate-400 hover:text-green-400',
         )}
-      </div>
+      >
+        {item.status === 'done' ? <CheckCircle size={18} /> : <Circle size={18} />}
+      </button>
+      <p
+        className={cn(
+          'flex-1 text-sm min-w-0 truncate',
+          item.status === 'done' ? 'text-slate-500 line-through' : 'text-white',
+        )}
+      >
+        {item.title}
+      </p>
+      {item.status === 'done' && item.xp_earned > 0 && (
+        <span className="text-xs text-yellow-400 font-medium flex-shrink-0">
+          +{item.xp_earned} XP
+        </span>
+      )}
+    </div>
+  )
+}
+
+function TaskSections({
+  items,
+  onToggle,
+}: {
+  items: (DailyItem & { categories?: Category })[]
+  onToggle: (item: DailyItem & { categories?: Category }) => void
+}) {
+  return (
+    <div className="space-y-3">
+      {TASK_SECTIONS.map((section) => {
+        const sectionItems = items.filter((it) =>
+          section.match((it.categories as Category)?.name ?? ''),
+        )
+        if (sectionItems.length === 0) return null
+        const done = sectionItems.filter((it) => it.status === 'done').length
+        return (
+          <div
+            key={section.key}
+            className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden"
+            style={{ borderLeftColor: section.accent, borderLeftWidth: 3 }}
+          >
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-800/60">
+              <span>{section.icon}</span>
+              <span className="font-semibold text-white text-sm">{section.label}</span>
+              <span className="ml-auto text-xs text-slate-500">
+                {done}/{sectionItems.length}
+              </span>
+            </div>
+            <div className="p-3 space-y-2">
+              {sectionItems.map((item) => (
+                <TaskRow key={item.id} item={item} onToggle={onToggle} />
+              ))}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

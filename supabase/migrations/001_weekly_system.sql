@@ -25,13 +25,14 @@ create or replace function public.seed_default_categories(p_user_id uuid)
 returns void as $$
 begin
   insert into public.categories (user_id, name, color, icon, is_default) values
-    (p_user_id, 'Prayers',  '#22c55e', '🕌', true),
-    (p_user_id, 'Work',     '#3b82f6', '💼', false),
-    (p_user_id, 'PhD',      '#8b5cf6', '🎓', false),
-    (p_user_id, 'Learning', '#f59e0b', '📚', false),
-    (p_user_id, 'Family',   '#f97316', '👨‍👩‍👦', false),
-    (p_user_id, 'Business', '#06b6d4', '📈', false),
-    (p_user_id, 'Book',     '#ec4899', '📖', false)
+    (p_user_id, 'Prayers',    '#22c55e', '🕌', true),
+    (p_user_id, 'Work',       '#3b82f6', '💼', false),
+    (p_user_id, 'PhD',        '#8b5cf6', '🎓', false),
+    (p_user_id, 'Learning',   '#f59e0b', '📚', false),
+    (p_user_id, 'Family',     '#f97316', '👨‍👩‍👦', false),
+    (p_user_id, 'Business',   '#06b6d4', '📈', false),
+    (p_user_id, 'Book',       '#ec4899', '📖', false),
+    (p_user_id, 'Soft Skill', '#14b8a6', '🧠', false)
   on conflict (user_id, name) do nothing;
 end;
 $$ language plpgsql security definer;
@@ -93,6 +94,11 @@ create table if not exists public.daily_items (
   completed_at timestamptz,
   created_at timestamptz default now()
 );
+
+-- Prevent duplicate prayer rows for the same day (also protects against race conditions)
+ALTER TABLE public.daily_items
+  ADD CONSTRAINT IF NOT EXISTS daily_items_user_date_title_unique
+  UNIQUE (user_id, scheduled_date, title);
 
 alter table public.daily_items enable row level security;
 drop policy if exists "Users manage own daily items" on public.daily_items;

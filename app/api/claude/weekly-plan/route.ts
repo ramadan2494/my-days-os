@@ -12,19 +12,29 @@ export async function POST(request: Request) {
   if (!apiKey)
     return NextResponse.json({ error: 'Claude API key not configured' }, { status: 500 })
 
-  const { week_start, items, hours_per_day = 8 } = await request.json()
+  const { week_start, items } = await request.json()
+
+  // User schedule: Sun-Thu = work days, Fri-Sat = vacation
+  // Only "Work" (day job) is WORK — Business, PhD, Learning etc. are all FLEXIBLE
+  const WORK_ONLY_CATEGORIES = ['Work']
+  const categoryMeta = (items as { category_name: string; category_id: string; topic: string; hours_per_week?: number }[])
+    .map((it) => ({
+      ...it,
+      is_work: WORK_ONLY_CATEGORIES.some((w) => it.category_name.toLowerCase().includes(w.toLowerCase())),
+    }))
 
   const prompt = `You are a weekly productivity planner. The user has described their goals for the week.
 Return ONLY a valid JSON array, no explanation, no markdown fences.
 
 Week starts: ${week_start}
-Available hours per day: ${hours_per_day}
+
+USER'S WEEKLY SCHEDULE (Middle-East work week):
+- Sunday(6), Monday(0), Tuesday(1), Wednesday(2), Thursday(3): WORK DAYS — have job commitments
+- Friday(4) and Saturday(5): WEEKEND / VACATION — free for Learning, PhD, Family, Book
 
 Goals by category:
-${items
-  .map((it: { category_name: string; category_id: string; topic: string }) =>
-    `- ${it.category_name} (id: ${it.category_id}): ${it.topic}`
-  )
+${categoryMeta
+  .map((it) => `- ${it.category_name} (id: ${it.category_id}) [${it.is_work ? 'WORK' : 'FLEXIBLE'}]: ${it.topic}${it.hours_per_week ? ` (${it.hours_per_week}h/week target)` : ''}`)
   .join('\n')}
 
 Return a JSON array where each element has:
@@ -38,11 +48,16 @@ Return a JSON array where each element has:
 }
 
 day_index: 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday
-Rules:
-- Create 2-4 tasks per day total, spread across Mon-Sun
-- Sunday (6) is lighter: max 2 tasks
-- Be specific and actionable in titles
-- Match each task's category_id exactly from the input`
+
+CRITICAL RULES — follow exactly:
+1. [WORK] items (Work day-job only) → ONLY on work days: Sun(6), Mon(0), Tue(1), Wed(2), Thu(3). NEVER on Fri(4) or Sat(5).
+2. Business, PhD, Learning, Book, Soft Skill are FLEXIBLE → spread across ALL work days AND Fri-Sat. Friday and Saturday are ideal for long sessions.
+3. Family items → any day, especially Fri(4) and Sat(5).
+4. Each work day (Sun-Thu): 1 Work task + 1-2 FLEXIBLE tasks (PhD/Learning/Business/Soft Skill/Book/Family) = 2-3 tasks.
+5. Friday(4) and Saturday(5): FLEXIBLE only — Business/PhD/Learning/Book/Soft Skill/Family, 2-3 tasks each day. No Work.
+6. Spread each category across MULTIPLE days — never cluster all PhD on one day.
+7. Be specific and actionable in titles.
+8. Match each task's category_id exactly from the input.`
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {

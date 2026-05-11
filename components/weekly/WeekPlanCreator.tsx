@@ -34,6 +34,7 @@ export default function WeekPlanCreator({
 }: Props) {
   const [tab, setTab] = useState<'ai' | 'manual'>('ai')
   const [topics, setTopics] = useState<Record<string, string>>({})
+  const [hoursPerWeek, setHoursPerWeek] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState<GeneratedTask[] | null>(null)
   const [manualForm, setManualForm] = useState({
@@ -51,7 +52,7 @@ export default function WeekPlanCreator({
       .filter(([, v]) => v.trim())
       .map(([catId, topic]) => {
         const cat = categories.find((c) => c.id === catId)
-        return { category_id: catId, category_name: cat?.name ?? '', topic }
+        return { category_id: catId, category_name: cat?.name ?? '', topic, hours_per_week: Number(hoursPerWeek[catId]) || undefined }
       })
 
     if (items.length === 0) {
@@ -68,7 +69,6 @@ export default function WeekPlanCreator({
         body: JSON.stringify({
           week_start: weekPlan?.week_start ?? new Date().toISOString().split('T')[0],
           items,
-          hours_per_day: 8,
         }),
       })
       const data = await res.json()
@@ -202,6 +202,20 @@ export default function WeekPlanCreator({
                     placeholder={`What do you want to achieve in ${cat.name} this week?`}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-blue-500 resize-none"
                   />
+                  {topics[cat.id]?.trim() && cat.name !== 'Work' && (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <label className="text-xs text-slate-500 whitespace-nowrap">Hours / week:</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={40}
+                        value={hoursPerWeek[cat.id] ?? ''}
+                        onChange={(e) => setHoursPerWeek((prev) => ({ ...prev, [cat.id]: e.target.value }))}
+                        placeholder="e.g. 5"
+                        className="w-20 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
               <button

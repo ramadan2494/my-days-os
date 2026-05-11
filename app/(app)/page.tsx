@@ -14,7 +14,14 @@ export default async function TodayPage({
   } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const today = dateParam ?? new Date().toISOString().split('T')[0]
+  // Server computes UTC date as best guess. Client will silently re-fetch if the
+  // local timezone date differs (no redirect — avoids double page load).
+  const now = new Date()
+  const today = dateParam ?? [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-')
 
   const [profileRes, dailyItemsRes] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', user.id).single(),

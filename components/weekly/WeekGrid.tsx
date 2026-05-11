@@ -1,7 +1,10 @@
 'use client'
 
+import { useState } from 'react'
 import { DailyItem, Category } from '@/lib/supabase/types'
+import { createClient } from '@/lib/supabase/client'
 import DayColumn from './DayColumn'
+import toast from 'react-hot-toast'
 
 interface Props {
   userId: string
@@ -19,16 +22,50 @@ export default function WeekGrid({
   weekStart,
   onItemsChange,
 }: Props) {
-  const today = new Date().toISOString().split('T')[0]
+  const supabase = createClient()
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+
+  const now = new Date()
+  const today = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-')
 
   const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart)
+    const d = new Date(weekStart + 'T12:00:00')
     d.setDate(d.getDate() + i)
-    return d.toISOString().split('T')[0]
+    return [
+      d.getFullYear(),
+      String(d.getMonth() + 1).padStart(2, '0'),
+      String(d.getDate()).padStart(2, '0'),
+    ].join('-')
   })
 
   function handleItemUpdate(updated: DailyItem & { categories?: Category }) {
     onItemsChange(dailyItems.map((it) => (it.id === updated.id ? updated : it)))
+  }
+
+  async function handleDrop(targetDate: string) {
+    if (!draggingId) return
+    const item = dailyItems.find((it) => it.id === draggingId)
+    if (!item || item.scheduled_date === targetDate) {
+      setDraggingId(null)
+      return
+    }
+    const { data, error } = await supabase
+      .from('daily_items')
+      .update({ scheduled_date: targetDate })
+      .eq('id', draggingId)
+      .select('*, categories(*)')
+      .single()
+    if (error) {
+      toast.error('Failed to move task')
+    } else {
+      onItemsChange(dailyItems.map((it) => (it.id === draggingId ? data : it)))
+      toast.success(`Moved to ${new Date(targetDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}`)
+    }
+    setDraggingId(null)
   }
 
   if (dailyItems.length === 0) {
@@ -52,7 +89,11 @@ export default function WeekGrid({
             dayName={DAY_NAMES[i]}
             isToday={date === today}
             items={dailyItems.filter((it) => it.scheduled_date === date)}
+            draggingId={draggingId}
             onItemUpdate={handleItemUpdate}
+            onDragStart={(id) => setDraggingId(id)}
+            onDragEnd={() => setDraggingId(null)}
+            onDrop={handleDrop}
           />
         ))}
       </div>

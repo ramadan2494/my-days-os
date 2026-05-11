@@ -1,8 +1,9 @@
 'use client'
 
+import { useState, useRef } from 'react'
 import { DailyItem, Category } from '@/lib/supabase/types'
 import { createClient } from '@/lib/supabase/client'
-import { CheckCircle, Circle } from 'lucide-react'
+import { CheckCircle, Circle, GripVertical } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 
@@ -11,16 +12,35 @@ interface Props {
   dayName: string
   isToday: boolean
   items: (DailyItem & { categories?: Category })[]
+  draggingId: string | null
   onItemUpdate: (item: DailyItem & { categories?: Category }) => void
+  onDragStart: (id: string) => void
+  onDragEnd: () => void
+  onDrop: (targetDate: string) => void
 }
 
-export default function DayColumn({ date, dayName, isToday, items, onItemUpdate }: Props) {
+export default function DayColumn({ date, dayName, isToday, items, draggingId, onItemUpdate, onDragStart, onDragEnd, onDrop }: Props) {
   const supabase = createClient()
   const dayNum = new Date(date + 'T12:00:00').getDate()
   const doneCount = items.filter((it) => it.status === 'done').length
+  const [isOver, setIsOver] = useState(false)
+  const dragEnterCount = useRef(0)
 
   async function toggleItem(item: DailyItem & { categories?: Category }) {
-    if (item.status === 'done') return
+    if (item.status === 'done') {
+      // Uncheck: reset to pending
+      const { data, error } = await supabase
+        .from('daily_items')
+        .update({ status: 'pending', xp_earned: 0, completed_at: null })
+        .eq('id', item.id)
+        .select('*, categories(*)')
+        .single()
+      if (!error && data) {
+        onItemUpdate(data)
+        toast(`↩️ ${item.title} unchecked`, { style: { background: '#1e293b', color: '#94a3b8' } })
+      }
+      return
+    }
 
     const { data, error } = await supabase
       .from('daily_items')
@@ -56,9 +76,14 @@ export default function DayColumn({ date, dayName, isToday, items, onItemUpdate 
   return (
     <div
       className={cn(
-        'bg-slate-900 border rounded-xl p-3 flex flex-col gap-2 min-h-[140px]',
-        isToday ? 'border-yellow-500/50 bg-yellow-500/5' : 'border-slate-800'
+        'bg-slate-900 border rounded-xl p-3 flex flex-col gap-2 min-h-[140px] transition-colors',
+        isToday ? 'border-yellow-500/50 bg-yellow-500/5' : 'border-slate-800',
+        isOver && draggingId ? 'border-blue-500/60 bg-blue-500/10' : '',
       )}
+      onDragEnter={(e) => { e.preventDefault(); dragEnterCount.current++; setIsOver(true) }}
+      onDragLeave={() => { dragEnterCount.current--; if (dragEnterCount.current === 0) setIsOver(false) }}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => { e.preventDefault(); dragEnterCount.current = 0; setIsOver(false); onDrop(date) }}
     >
       {/* Day header */}
       <div
@@ -98,39 +123,51 @@ export default function DayColumn({ date, dayName, isToday, items, onItemUpdate 
       {/* Items */}
       <div className="space-y-1.5 flex-1">
         {items.map((item) => (
-          <button
+          <div
             key={item.id}
-            onClick={() => toggleItem(item)}
-            disabled={item.status === 'done'}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = 'move'
+              // Delay so browser captures ghost first, then dims the original element
+              setTimeout(() => onDragStart(item.id), 0)
+            }}
+            onDragEnd={onDragEnd}
             className={cn(
-              'w-full flex items-start gap-1.5 p-1.5 rounded-lg text-left text-xs transition-all',
-              item.status === 'done'
-                ? 'opacity-50 cursor-default'
-                : 'hover:bg-slate-800 active:scale-95 cursor-pointer'
+              'group/item flex items-start gap-1 p-1.5 rounded-lg text-xs transition-all',
+              draggingId === item.id ? 'opacity-50 ring-1 ring-blue-400/50 bg-blue-500/10' : '',
+              item.status === 'done' ? 'opacity-60 hover:opacity-80 hover:bg-slate-800 cursor-pointer' : 'hover:bg-slate-800 cursor-grab active:cursor-grabbing',
             )}
           >
-            {item.status === 'done' ? (
-              <CheckCircle size={12} className="text-green-400 mt-0.5 flex-shrink-0" />
-            ) : (
-              <Circle size={12} className="text-slate-500 mt-0.5 flex-shrink-0" />
-            )}
-            <span
-              className={cn(
-                'leading-tight',
-                item.status === 'done' ? 'line-through text-slate-500' : 'text-slate-300'
-              )}
-              style={
-                item.categories && item.status !== 'done'
-                  ? { color: item.categories.color }
-                  : {}
-              }
+            <GripVertical size={10} className="text-slate-700 group-hover/item:text-slate-500 mt-0.5 flex-shrink-0 transition-colors" />
+            <button
+              onClick={() => toggleItem(item)}
+              className="flex items-start gap-1 flex-1 text-left min-w-0"
             >
-              {item.categories?.icon} {item.title}
-            </span>
-          </button>
+              {item.status === 'done' ? (
+                <CheckCircle size={12} className="text-green-400 mt-0.5 flex-shrink-0 group-hover/item:text-red-400 transition-colors" />
+              ) : (
+                <Circle size={12} className="text-slate-500 mt-0.5 flex-shrink-0" />
+              )}
+              <span
+                className={cn(
+                  'leading-tight break-words whitespace-normal line-clamp-3',
+                  item.status === 'done' ? 'line-through text-slate-500' : 'text-slate-300'
+                )}
+                style={
+                  item.categories && item.status !== 'done'
+                    ? { color: item.categories.color }
+                    : {}
+                }
+              >
+                {item.categories?.icon} {item.title}
+              </span>
+            </button>
+          </div>
         ))}
         {items.length === 0 && (
-          <p className="text-[10px] text-slate-700 text-center py-3">—</p>
+          <p className={cn('text-[10px] text-center py-3 transition-colors', isOver && draggingId ? 'text-blue-400' : 'text-slate-700')}>
+            {isOver && draggingId ? 'Drop here' : '—'}
+          </p>
         )}
       </div>
     </div>

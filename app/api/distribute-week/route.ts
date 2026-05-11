@@ -5,6 +5,7 @@ interface WeeklyItemInput {
   id: string
   title: string
   category_id: string
+  category_name: string
   target_days: number
   priority: string
 }
@@ -26,20 +27,40 @@ export async function POST(request: Request) {
     week_start: string
   } = await request.json()
 
+  // User schedule: Sun-Thu = work days, Fri-Sat = vacation/weekend
+  // Only the "Work" day-job category is WORK; Business/PhD/Learning/Soft Skill are all FLEXIBLE
+  const WORK_ONLY_CATEGORIES = ['work']
+  const itemsWithType = weekly_items.map((it) => ({
+    ...it,
+    type: WORK_ONLY_CATEGORIES.some((w) => (it.category_name ?? '').toLowerCase().includes(w)) ? 'WORK' : 'FLEXIBLE',
+  }))
+
   const prompt = `Distribute these weekly items across Monday to Sunday (day_index 0-6).
-Each item has target_days — assign to exactly that many different days.
-Spread tasks evenly. Avoid overloading one day. Sunday (6) is lighter: max 2 tasks.
+Each item has target_days — assign to exactly that many DIFFERENT days.
+
+USER'S SCHEDULE (Middle-East work week, Sun-Thu):
+- Sunday(6), Monday(0), Tuesday(1), Wednesday(2), Thursday(3): WORK DAYS — job commitments
+- Friday(4) and Saturday(5): WEEKEND — free for Learning, PhD, Family, Book
 
 Return ONLY a JSON array: [{"weekly_item_id": "uuid", "day_index": 0}]
 For items with target_days > 1, include multiple entries for the same item with different day_index values.
 
 Items to distribute:
-${weekly_items
+${itemsWithType
   .map(
     (it) =>
-      `- id: "${it.id}", title: "${it.title}", target_days: ${it.target_days}, priority: ${it.priority}`
+      `- id: "${it.id}", title: "${it.title}", type: ${it.type}, category: ${it.category_name}, target_days: ${it.target_days}, priority: ${it.priority}`
   )
-  .join('\n')}`
+  .join('\n')}
+
+CRITICAL RULES:
+1. [WORK] items (Work day-job only) → ONLY on work days: Sun(6), Mon(0), Tue(1), Wed(2), Thu(3). NEVER on Fri(4) or Sat(5).
+2. Business, PhD, Learning, Book, Soft Skill are FLEXIBLE → spread across work days AND Fri-Sat. Prioritize Friday and Saturday for deep sessions.
+3. Family items → any day, especially Fri(4), Sat(5).
+4. Each work day (Sun-Thu): 1 Work task + 1-2 FLEXIBLE tasks, aim for 2-3 tasks total, never more than 4.
+5. Friday(4) and Saturday(5): FLEXIBLE only — Business/PhD/Learning/Book/Soft Skill/Family, 2-3 tasks each day.
+6. Spread categories across multiple days — no clustering.
+7. Balance load evenly across all 7 days.`
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
