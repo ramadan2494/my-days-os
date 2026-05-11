@@ -13,6 +13,7 @@ import {
   Settings,
   LogOut,
   Zap,
+  CalendarDays,
 } from 'lucide-react'
 import { cn, getLevelTitle } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { href: '/', icon: LayoutDashboard, label: 'Today', color: 'text-blue-400' },
   { href: '/prayer', icon: Moon, label: 'Prayer', color: 'text-green-400' },
   { href: '/work', icon: CheckSquare, label: 'Work', color: 'text-blue-400' },
+  { href: '/monthly', icon: CalendarDays, label: 'Monthly', color: 'text-cyan-400' },
   { href: '/learning', icon: BookOpen, label: 'Learning', color: 'text-purple-400' },
   { href: '/family', icon: Heart, label: 'Family', color: 'text-orange-400' },
   { href: '/coaching', icon: Brain, label: 'Coaching', color: 'text-pink-400' },

@@ -103,8 +103,32 @@ Rules:
 
     const plan = JSON.parse(jsonMatch[0])
 
-    // Create tasks in the database
-    const tasks = plan.daily_tasks.map((t: any) => {
+    // 1. Create the monthly_plans row first
+    const month = today.slice(0, 7) // YYYY-MM
+    const { data: monthlyPlan, error: planError } = await supabase
+      .from('monthly_plans')
+      .insert({
+        user_id: user.id,
+        title,
+        month,
+        start_date: today,
+        end_date: deadline,
+        goal_text: context ?? null,
+        overview: plan.overview ?? null,
+        ai_plan: { overview: plan.overview, weeks: plan.weeks ?? [] },
+        hours_per_day: hoursPerDay ?? 2,
+        category: category ?? 'Work',
+      })
+      .select()
+      .single()
+
+    if (planError) {
+      console.error('Monthly plan insert error:', planError)
+      return NextResponse.json({ error: 'Failed to save monthly plan' }, { status: 500 })
+    }
+
+    // 2. Create tasks linked to the monthly plan
+    const tasks = (plan.daily_tasks ?? []).map((t: any) => {
       const taskDate = new Date(todayDate)
       taskDate.setDate(taskDate.getDate() + t.day_offset)
       return {
@@ -118,6 +142,7 @@ Rules:
         estimated_minutes: t.estimated_minutes ?? 60,
         is_deep_work: t.is_deep_work ?? false,
         status: 'todo',
+        monthly_plan_id: monthlyPlan.id,
       }
     })
 
@@ -132,6 +157,7 @@ Rules:
     }
 
     return NextResponse.json({
+      plan_id: monthlyPlan.id,
       overview: plan.overview,
       weeks: plan.weeks ?? [],
       tasks_created: insertedTasks?.length ?? 0,

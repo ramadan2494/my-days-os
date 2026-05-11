@@ -65,8 +65,32 @@ export interface Task {
   is_deep_work: boolean
   xp_earned: number
   completed_at: string | null
+  monthly_plan_id: string | null
   created_at: string
   updated_at: string
+}
+
+export interface MonthlyPlan {
+  id: string
+  user_id: string
+  title: string
+  month: string // YYYY-MM
+  start_date: string
+  end_date: string
+  goal_text: string | null
+  overview: string | null
+  ai_plan: {
+    overview: string
+    weeks: Array<{
+      week_number: number
+      theme: string
+      focus: string
+      milestone: string
+    }>
+  } | null
+  hours_per_day: number
+  category: string
+  created_at: string
 }
 
 export interface PomodoroSession {

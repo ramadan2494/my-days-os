@@ -2,13 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Moon, CheckSquare, BookOpen, Brain } from 'lucide-react'
+import { LayoutDashboard, Moon, CheckSquare, BookOpen, Brain, CalendarDays } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const MOBILE_NAV = [
   { href: '/', icon: LayoutDashboard, label: 'Today' },
   { href: '/prayer', icon: Moon, label: 'Prayer' },
-  { href: '/work', icon: CheckSquare, label: 'Work' },
+  { href: '/monthly', icon: CalendarDays, label: 'Monthly' },
   { href: '/learning', icon: BookOpen, label: 'Learn' },
   { href: '/coaching', icon: Brain, label: 'Coach' },
 ]

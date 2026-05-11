@@ -46,7 +46,11 @@ const WEEK_COLORS = [
   'border-yellow-500/30 bg-yellow-500/5',
 ]
 
-export default function MonthlyGoalPlanner() {
+interface MonthlyGoalPlannerProps {
+  onCreated?: () => void
+}
+
+export default function MonthlyGoalPlanner({ onCreated }: MonthlyGoalPlannerProps = {}) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<PlanResult | null>(null)
@@ -95,6 +99,7 @@ export default function MonthlyGoalPlanner() {
       setResult(data)
       setExpandedWeek(1)
       toast.success(`✨ ${data.tasks_created} tasks scheduled across ${data.weeks?.length ?? '?'} weeks!`)
+      onCreated?.()
     } catch {
       toast.error('Network error. Try again.')
     } finally {
