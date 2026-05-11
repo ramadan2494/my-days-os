@@ -75,6 +75,23 @@ export default function PrayerStrip({ prayers: initialPrayers, userId, date, pro
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleCheckPrayer(prayer: Prayer) {
+    const isCompleted = prayer.status === 'on_time' || prayer.status === 'late'
+
+    if (isCompleted) {
+      // Undo: reset back to pending and reverse XP
+      const { data, error } = await supabase
+        .from('prayers')
+        .update({ status: 'pending', completed_at: null, xp_earned: 0 })
+        .eq('id', prayer.id)
+        .select()
+        .single()
+      if (error) { toast.error('Failed to undo prayer'); return }
+      await supabase.rpc('increment_xp', { user_id: userId, amount: -prayer.xp_earned }).then(() => null, () => null)
+      setPrayers(prev => prev.map(p => p.id === prayer.id ? data : p))
+      toast.success(`↩️ ${prayer.name} unchecked`)
+      return
+    }
+
     if (prayer.status !== 'pending') return
 
     const now = new Date()
@@ -173,18 +190,18 @@ export default function PrayerStrip({ prayers: initialPrayers, userId, date, pro
             return (
               <button
                 key={name}
-                onClick={() => prayer && isPending && handleCheckPrayer(prayer)}
-                disabled={isCompleted || isMissed || !prayer}
+                onClick={() => prayer && !isMissed && handleCheckPrayer(prayer)}
+                disabled={isMissed || !prayer}
                 title={
                   !prayer ? 'Prayer not synced yet' :
-                  isCompleted ? `${name} completed ✓` :
+                  isCompleted ? `Tap to undo ${name}` :
                   isMissed ? `${name} missed` :
                   `Tap to mark ${name} as prayed`
                 }
                 className={cn(
                   'flex flex-col items-center gap-1.5 p-2.5 rounded-xl border transition-all duration-200',
                   isCompleted
-                    ? 'border-green-500/30 bg-green-500/10'
+                    ? 'border-green-500/30 bg-green-500/10 cursor-pointer hover:bg-red-500/10 hover:border-red-500/20'
                     : isMissed
                     ? 'border-red-500/30 bg-red-500/10'
                     : prayer

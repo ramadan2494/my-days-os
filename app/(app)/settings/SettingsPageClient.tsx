@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { Profile } from '@/lib/supabase/types'
-import { createClient } from '@/lib/supabase/client'
 import { Settings, MapPin, Bell, Moon, Briefcase, User, Save } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -23,58 +22,82 @@ export default function SettingsPageClient({ userId, profile, email }: SettingsP
   const [form, setForm] = useState({
     full_name: profile?.full_name ?? '',
     prayer_method: profile?.prayer_method ?? 'MWL',
-    location_lat: profile?.location_lat ?? '',
-    location_lng: profile?.location_lng ?? '',
-    city_name: profile?.city_name ?? '',
-    notification_offset_minutes: profile?.notification_offset_minutes ?? 10,
+    location_lat: profile?.location_lat != null ? String(profile.location_lat) : '',
+    location_lng: profile?.location_lng != null ? String(profile.location_lng) : '',
+    city: profile?.city_name ?? profile?.city ?? '',
+    prayer_notification_offset: profile?.notification_offset_minutes ?? profile?.prayer_notification_offset ?? 10,
     work_start_hour: profile?.work_start_hour ?? 9,
-    work_hours_per_day: profile?.work_hours_per_day ?? 8,
+    work_hours: profile?.work_hours_per_day ?? profile?.work_hours ?? 8,
   })
   const [saving, setSaving] = useState(false)
   const [geoLoading, setGeoLoading] = useState(false)
-  const supabase = createClient()
+  const [syncing, setSyncing] = useState(false)
 
   async function save() {
     setSaving(true)
-    const { error } = await supabase.from('profiles').update({
-      full_name: form.full_name,
-      prayer_method: form.prayer_method,
-      location_lat: form.location_lat ? Number(form.location_lat) : null,
-      location_lng: form.location_lng ? Number(form.location_lng) : null,
-      city_name: form.city_name,
-      notification_offset_minutes: form.notification_offset_minutes,
-      work_start_hour: form.work_start_hour,
-      work_hours_per_day: form.work_hours_per_day,
-      updated_at: new Date().toISOString(),
-    }).eq('id', userId)
+    const res = await fetch('/api/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        full_name: form.full_name,
+        prayer_method: form.prayer_method,
+        location_lat: form.location_lat ? Number(form.location_lat) : null,
+        location_lng: form.location_lng ? Number(form.location_lng) : null,
+        city: form.city,
+        prayer_notification_offset: form.prayer_notification_offset,
+        work_start_hour: form.work_start_hour,
+        work_hours: form.work_hours,
+      }),
+    })
     setSaving(false)
-    if (error) toast.error('Failed to save settings')
-    else toast.success('Settings saved!')
+    if (!res.ok) {
+      const err = await res.json()
+      console.error('Settings save error:', err)
+      toast.error(`Failed to save: ${err.error}`)
+      return
+    }
+    toast.success('Settings saved!')
+
+    // Auto-sync prayer times for today if location is set
+    if (form.location_lat && form.location_lng) {
+      setSyncing(true)
+      try {
+        const today = new Date().toISOString().split('T')[0]
+        const res = await fetch('/api/prayers/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date: today }),
+        })
+        if (res.ok) toast.success('Prayer times synced!')
+        else {
+          const err = await res.json()
+          toast.error(err.error ?? 'Prayer sync failed')
+        }
+      } catch {
+        toast.error('Prayer sync failed — check network')
+      } finally {
+        setSyncing(false)
+      }
+    }
   }
 
-  function detectLocation() {
-    if (!navigator.geolocation) { toast.error('Geolocation not supported'); return }
+  async function detectLocation() {
     setGeoLoading(true)
-    navigator.geolocation.getCurrentPosition(
-      async pos => {
-        setForm(f => ({
-          ...f,
-          location_lat: pos.coords.latitude.toFixed(6),
-          location_lng: pos.coords.longitude.toFixed(6),
-        }))
-        // Reverse geocode using a free API
-        try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`)
-          const data = await res.json()
-          const city = data.address?.city || data.address?.town || data.address?.village || ''
-          const country = data.address?.country || ''
-          setForm(f => ({ ...f, city_name: [city, country].filter(Boolean).join(', ') }))
-        } catch { /* ignore reverse geocode errors */ }
-        setGeoLoading(false)
-        toast.success('Location detected!')
-      },
-      () => { toast.error('Location access denied'); setGeoLoading(false) }
-    )
+    try {
+      const res = await fetch('https://ipapi.co/json/')
+      if (!res.ok) throw new Error('request failed')
+      const data = await res.json()
+      if (data.error) throw new Error(data.reason || 'lookup failed')
+      const lat = String(data.latitude.toFixed(6))
+      const lng = String(data.longitude.toFixed(6))
+      const city = [data.city, data.country_name].filter(Boolean).join(', ')
+      setForm(f => ({ ...f, location_lat: lat, location_lng: lng, city }))
+      toast.success('Location detected! Click Save Settings to apply.')
+    } catch {
+      toast.error('Could not detect location — enter coordinates manually')
+    } finally {
+      setGeoLoading(false)
+    }
   }
 
   return (
@@ -127,16 +150,16 @@ export default function SettingsPageClient({ userId, profile, email }: SettingsP
                 onChange={e => setForm(f => ({ ...f, location_lng: e.target.value }))}
                 className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-500" />
             </div>
-            {form.city_name && (
-              <p className="text-xs text-slate-400 mt-1.5">📍 {form.city_name}</p>
+            {form.city && (
+              <p className="text-xs text-slate-400 mt-1.5">📍 {form.city}</p>
             )}
           </div>
           <div>
             <label className="text-xs text-slate-400 mb-1 block">
-              Alert {form.notification_offset_minutes} min before prayer
+              Alert {form.prayer_notification_offset} min before prayer
             </label>
-            <input type="range" min="0" max="30" step="5" value={form.notification_offset_minutes}
-              onChange={e => setForm(f => ({ ...f, notification_offset_minutes: Number(e.target.value) }))}
+            <input type="range" min="0" max="30" step="5" value={form.prayer_notification_offset}
+              onChange={e => setForm(f => ({ ...f, prayer_notification_offset: Number(e.target.value) }))}
               className="w-full accent-purple-500" />
             <div className="flex justify-between text-[10px] text-slate-600 mt-0.5">
               <span>0 min</span><span>15 min</span><span>30 min</span>
@@ -159,17 +182,17 @@ export default function SettingsPageClient({ userId, profile, email }: SettingsP
           </div>
           <div>
             <label className="text-xs text-slate-400 mb-1 block">Hours per day</label>
-            <input type="number" min="1" max="12" value={form.work_hours_per_day}
-              onChange={e => setForm(f => ({ ...f, work_hours_per_day: Number(e.target.value) }))}
+            <input type="number" min="1" max="12" value={form.work_hours}
+              onChange={e => setForm(f => ({ ...f, work_hours: Number(e.target.value) }))}
               className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500" />
           </div>
         </div>
       </Section>
 
-      <button onClick={save} disabled={saving}
+      <button onClick={save} disabled={saving || syncing}
         className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium px-6 py-3 rounded-xl transition-colors">
         <Save size={16} />
-        {saving ? 'Saving...' : 'Save Settings'}
+        {saving ? 'Saving...' : syncing ? 'Syncing prayers...' : 'Save Settings'}
       </button>
     </div>
   )

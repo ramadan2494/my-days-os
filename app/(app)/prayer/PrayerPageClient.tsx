@@ -38,6 +38,23 @@ export default function PrayerPageClient({ userId, profile, todayPrayers, histor
   const heatmapDays = buildHeatmap(history)
 
   async function handlePrayer(prayer: Prayer) {
+    const isCompleted = prayer.status === 'on_time' || prayer.status === 'late'
+
+    if (isCompleted) {
+      // Undo: reset back to pending and reverse XP
+      const { data, error } = await supabase
+        .from('prayers')
+        .update({ status: 'pending', completed_at: null, xp_earned: 0 })
+        .eq('id', prayer.id)
+        .select()
+        .single()
+      if (error) { toast.error('Failed to undo prayer'); return }
+      await supabase.rpc('increment_xp', { user_id: userId, amount: -prayer.xp_earned }).then(() => null, () => null)
+      setPrayers(prev => prev.map(p => p.id === prayer.id ? data : p))
+      toast.success(`↩️ ${prayer.name} unchecked`)
+      return
+    }
+
     if (prayer.status !== 'pending') return
     const now = new Date()
     const status = determinePrayerStatus(prayer.scheduled_time, now, prayer.name)
@@ -112,7 +129,7 @@ export default function PrayerPageClient({ userId, profile, todayPrayers, histor
               <button
                 key={name}
                 onClick={() => handlePrayer(prayer)}
-                disabled={isCompleted || isMissed}
+                disabled={isMissed}
                 className={cn(
                   'w-full flex items-center gap-4 p-4 rounded-xl border transition-all text-left',
                   isCompleted ? 'bg-green-500/10 border-green-500/30' :

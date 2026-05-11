@@ -35,6 +35,24 @@ drop policy if exists "Users can view own profile" on public.profiles;
 create policy "Users can view own profile" on public.profiles for select using (auth.uid() = id);
 drop policy if exists "Users can update own profile" on public.profiles;
 create policy "Users can update own profile" on public.profiles for update using (auth.uid() = id);
+drop policy if exists "Users can insert own profile" on public.profiles;
+create policy "Users can insert own profile" on public.profiles for insert with check (auth.uid() = id);
+
+-- Auto-create a profile row whenever a new auth user signs up
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles (id, email)
+  values (new.id, new.email)
+  on conflict (id) do nothing;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
 
 -- ============================================================
 -- PRAYERS
@@ -691,3 +709,117 @@ RETURNS void AS $$
     updated_at = now()
   WHERE id = user_id;
 $$ LANGUAGE sql SECURITY DEFINER;
+
+-- ============================================================
+-- WEEKLY PLANNING SYSTEM
+-- ============================================================
+
+-- CATEGORIES
+create table if not exists public.categories (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  name text not null,
+  color text not null default '#3b82f6',
+  icon text not null default '📌',
+  is_default boolean default false,
+  created_at timestamptz default now(),
+  unique(user_id, name)
+);
+
+alter table public.categories enable row level security;
+drop policy if exists "Users manage own categories" on public.categories;
+create policy "Users manage own categories" on public.categories for all using (auth.uid() = user_id);
+
+create or replace function public.seed_default_categories(p_user_id uuid)
+returns void as $$
+begin
+  insert into public.categories (user_id, name, color, icon, is_default) values
+    (p_user_id, 'Prayers',  '#22c55e', '🕌', true),
+    (p_user_id, 'Work',     '#3b82f6', '💼', false),
+    (p_user_id, 'PhD',      '#8b5cf6', '🎓', false),
+    (p_user_id, 'Learning', '#f59e0b', '📚', false),
+    (p_user_id, 'Family',   '#f97316', '👨‍👩‍👦', false),
+    (p_user_id, 'Business', '#06b6d4', '📈', false),
+    (p_user_id, 'Book',     '#ec4899', '📖', false)
+  on conflict (user_id, name) do nothing;
+end;
+$$ language plpgsql security definer;
+
+-- Update handle_new_user to also seed categories
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles (id, email, full_name)
+  values (new.id, new.email, new.raw_user_meta_data->>'full_name')
+  on conflict (id) do nothing;
+  perform public.seed_default_categories(new.id);
+  return new;
+end;
+$$ language plpgsql security definer;
+
+-- WEEK PLANS
+create table if not exists public.week_plans (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  week_start date not null,
+  title text,
+  created_at timestamptz default now(),
+  unique(user_id, week_start)
+);
+
+alter table public.week_plans enable row level security;
+drop policy if exists "Users manage own week plans" on public.week_plans;
+create policy "Users manage own week plans" on public.week_plans for all using (auth.uid() = user_id);
+
+-- WEEKLY ITEMS
+create table if not exists public.weekly_items (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  week_plan_id uuid references public.week_plans(id) on delete cascade not null,
+  category_id uuid references public.categories(id) on delete cascade not null,
+  title text not null,
+  description text,
+  target_days integer default 1 check (target_days between 1 and 7),
+  priority text default 'medium' check (priority in ('high','medium','low')),
+  created_at timestamptz default now()
+);
+
+alter table public.weekly_items enable row level security;
+drop policy if exists "Users manage own weekly items" on public.weekly_items;
+create policy "Users manage own weekly items" on public.weekly_items for all using (auth.uid() = user_id);
+
+-- DAILY ITEMS
+create table if not exists public.daily_items (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  week_plan_id uuid references public.week_plans(id) on delete cascade,
+  weekly_item_id uuid references public.weekly_items(id) on delete set null,
+  category_id uuid references public.categories(id) on delete cascade not null,
+  title text not null,
+  scheduled_date date not null,
+  status text default 'pending' check (status in ('pending','done','skipped')),
+  xp_earned integer default 0,
+  completed_at timestamptz,
+  created_at timestamptz default now()
+);
+
+alter table public.daily_items enable row level security;
+drop policy if exists "Users manage own daily items" on public.daily_items;
+create policy "Users manage own daily items" on public.daily_items for all using (auth.uid() = user_id);
+
+-- XP LOG
+create table if not exists public.xp_log (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  source_type text not null,
+  source_id uuid,
+  xp_amount integer not null,
+  earned_at timestamptz default now()
+);
+
+alter table public.xp_log enable row level security;
+drop policy if exists "Users view own xp log" on public.xp_log;
+create policy "Users view own xp log" on public.xp_log for all using (auth.uid() = user_id);
+
+-- Backfill default categories for all existing users (safe to re-run)
+select public.seed_default_categories(id) from public.profiles;

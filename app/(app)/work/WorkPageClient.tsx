@@ -108,7 +108,10 @@ export default function WorkPageClient({ userId, profile, initialTasks, pomodoro
     if (!form.title.trim()) return
 
     const { data, error } = await supabase.from('tasks').insert({
-      user_id: userId, ...form,
+      user_id: userId,
+      ...form,
+      due_date: form.due_date || null,
+      scheduled_date: form.scheduled_date || null,
     }).select().single()
 
     if (error) { toast.error('Failed to add task'); return }

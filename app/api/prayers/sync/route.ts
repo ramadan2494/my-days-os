@@ -23,21 +23,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to fetch prayer times' }, { status: 502 })
   }
 
-  const prayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'] as const
-  const inserts = prayers.map(name => ({
-    user_id: user.id,
-    date: targetDate,
-    name,
-    scheduled_time: times[name],
-    status: 'pending',
-    xp_earned: 0,
-  }))
+  // Fetch prayers that are already completed so we don't overwrite them
+  const { data: completedPrayers } = await supabase
+    .from('prayers')
+    .select('name')
+    .eq('user_id', user.id)
+    .eq('date', targetDate)
+    .neq('status', 'pending')
 
-  const { error } = await supabase.from('prayers').upsert(inserts, {
-    onConflict: 'user_id,date,name',
-    ignoreDuplicates: true, // never overwrite status of already-recorded prayers
-  })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  const completedNames = new Set(completedPrayers?.map((p: { name: string }) => p.name) ?? [])
+
+  const prayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'] as const
+  // Only upsert prayers that haven't been completed/missed yet
+  const inserts = prayers
+    .filter(name => !completedNames.has(name))
+    .map(name => ({
+      user_id: user.id,
+      date: targetDate,
+      name,
+      scheduled_time: times[name],
+      status: 'pending',
+      xp_earned: 0,
+    }))
+
+  if (inserts.length > 0) {
+    const { error } = await supabase.from('prayers').upsert(inserts, {
+      onConflict: 'user_id,date,name',
+      ignoreDuplicates: false, // update scheduled_time for pending prayers
+    })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  }
 
   return NextResponse.json({ times, message: 'Prayer times synced successfully' })
 }

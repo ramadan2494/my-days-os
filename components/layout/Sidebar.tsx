@@ -14,6 +14,7 @@ import {
   LogOut,
   Zap,
   CalendarDays,
+  CalendarRange,
 } from 'lucide-react'
 import { cn, getLevelTitle } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -22,6 +23,7 @@ import { Profile } from '@/lib/supabase/types'
 
 const NAV_ITEMS = [
   { href: '/', icon: LayoutDashboard, label: 'Today', color: 'text-blue-400' },
+  { href: '/week', icon: CalendarRange, label: 'Week', color: 'text-indigo-400' },
   { href: '/prayer', icon: Moon, label: 'Prayer', color: 'text-green-400' },
   { href: '/work', icon: CheckSquare, label: 'Work', color: 'text-blue-400' },
   { href: '/monthly', icon: CalendarDays, label: 'Monthly', color: 'text-cyan-400' },

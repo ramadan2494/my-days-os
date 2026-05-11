@@ -250,3 +250,65 @@ export interface TimelineBlock {
   status?: string
   entityId?: string
 }
+
+// ============================================================
+// WEEKLY PLANNING SYSTEM
+// ============================================================
+
+export interface Category {
+  id: string
+  user_id: string
+  name: string
+  color: string
+  icon: string
+  is_default: boolean
+  created_at: string
+}
+
+export type DailyItemStatus = 'pending' | 'done' | 'skipped'
+export type WeeklyItemPriority = 'high' | 'medium' | 'low'
+
+export interface WeekPlan {
+  id: string
+  user_id: string
+  week_start: string
+  title: string | null
+  created_at: string
+}
+
+export interface WeeklyItem {
+  id: string
+  user_id: string
+  week_plan_id: string
+  category_id: string
+  title: string
+  description: string | null
+  target_days: number
+  priority: WeeklyItemPriority
+  created_at: string
+  categories?: Category
+}
+
+export interface DailyItem {
+  id: string
+  user_id: string
+  week_plan_id: string | null
+  weekly_item_id: string | null
+  category_id: string
+  title: string
+  scheduled_date: string
+  status: DailyItemStatus
+  xp_earned: number
+  completed_at: string | null
+  created_at: string
+  categories?: Category
+}
+
+export interface XpLog {
+  id: string
+  user_id: string
+  source_type: string
+  source_id: string | null
+  xp_amount: number
+  earned_at: string
+}
