@@ -82,26 +82,26 @@ Learning 📚 #f59e0b · Family 👨‍👩‍👦 #f97316 · Business 📈 #06b
 - [x] components/weekly/WeekGrid.tsx
 - [x] components/weekly/DayColumn.tsx
 
-## Phase 4 — /today Rebuild
-- [ ] Rewrite app/(app)/page.tsx (daily_items model)
-- [ ] Prayers group first with On Time/Late/Skip buttons
-- [ ] XP float animation + level-up toast + badge popup
-- [ ] ?date= param support + prev/next arrows
+## Phase 4 — /today Rebuild ✅
+- [x] Rewrite app/(app)/page.tsx (daily_items model)
+- [x] Prayers group first with On Time/Late/Skip buttons
+- [x] XP float animation + level-up toast + badge popup
+- [x] ?date= param support + prev/next arrows
 
-## Phase 5 — /stats Page
-- [ ] app/(app)/stats/page.tsx + StatsPageClient.tsx
-- [ ] Hero: level, XP bar, streaks
-- [ ] Recharts weekly bar chart
-- [ ] Category breakdown rows
-- [ ] Prayer grid 5×7
-- [ ] Badges wall
+## Phase 5 — /stats Page ✅
+- [x] app/(app)/stats/page.tsx + StatsPageClient.tsx
+- [x] Hero: level, XP bar, streaks
+- [x] Recharts weekly bar chart
+- [x] Category breakdown rows
+- [x] Prayer grid 5×7
+- [x] Badges wall
 
-## Phase 6 — Nav + Settings + Onboarding
-- [ ] Rewrite Sidebar: Week / Today / Stats / Settings
-- [ ] Rewrite MobileNav: Today / Week / Stats / Settings
-- [ ] Add Categories section to Settings
-- [ ] app/(app)/onboarding/page.tsx (3-step)
-- [ ] Update proxy.ts publicPaths
+## Phase 6 — Nav + Settings + Onboarding ✅
+- [x] Rewrite Sidebar: Week / Today / Stats / Settings
+- [x] Rewrite MobileNav: Today / Week / Stats / Settings
+- [x] Add Categories section to Settings
+- [x] app/(app)/onboarding/page.tsx (3-step)
+- [x] Update proxy.ts publicPaths
 
 ## Phase 7 — Badges + Streaks
 - [ ] lib/badges.ts — checkAndAwardBadges()

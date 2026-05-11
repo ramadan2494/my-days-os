@@ -4,17 +4,11 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard,
-  Moon,
-  CheckSquare,
-  BookOpen,
-  Heart,
-  Brain,
-  User,
+  CalendarRange,
+  BarChart2,
   Settings,
   LogOut,
   Zap,
-  CalendarDays,
-  CalendarRange,
 } from 'lucide-react'
 import { cn, getLevelTitle } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -22,15 +16,9 @@ import { useRouter } from 'next/navigation'
 import { Profile } from '@/lib/supabase/types'
 
 const NAV_ITEMS = [
-  { href: '/', icon: LayoutDashboard, label: 'Today', color: 'text-blue-400' },
   { href: '/week', icon: CalendarRange, label: 'Week', color: 'text-indigo-400' },
-  { href: '/prayer', icon: Moon, label: 'Prayer', color: 'text-green-400' },
-  { href: '/work', icon: CheckSquare, label: 'Work', color: 'text-blue-400' },
-  { href: '/monthly', icon: CalendarDays, label: 'Monthly', color: 'text-cyan-400' },
-  { href: '/learning', icon: BookOpen, label: 'Learning', color: 'text-purple-400' },
-  { href: '/family', icon: Heart, label: 'Family', color: 'text-orange-400' },
-  { href: '/coaching', icon: Brain, label: 'Coaching', color: 'text-pink-400' },
-  { href: '/profile', icon: User, label: 'Profile', color: 'text-slate-400' },
+  { href: '/', icon: LayoutDashboard, label: 'Today', color: 'text-blue-400' },
+  { href: '/stats', icon: BarChart2, label: 'Stats', color: 'text-yellow-400' },
   { href: '/settings', icon: Settings, label: 'Settings', color: 'text-slate-400' },
 ]
 

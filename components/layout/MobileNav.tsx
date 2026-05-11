@@ -2,15 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Moon, CalendarRange, BookOpen, Brain } from 'lucide-react'
+import { LayoutDashboard, CalendarRange, BarChart2, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const MOBILE_NAV = [
   { href: '/', icon: LayoutDashboard, label: 'Today' },
   { href: '/week', icon: CalendarRange, label: 'Week' },
-  { href: '/prayer', icon: Moon, label: 'Prayer' },
-  { href: '/learning', icon: BookOpen, label: 'Learn' },
-  { href: '/coaching', icon: Brain, label: 'Coach' },
+  { href: '/stats', icon: BarChart2, label: 'Stats' },
+  { href: '/settings', icon: Settings, label: 'Settings' },
 ]
 
 export default function MobileNav() {

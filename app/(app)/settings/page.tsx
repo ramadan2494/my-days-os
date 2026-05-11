@@ -6,7 +6,17 @@ export default async function SettingsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
-  const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+  const [profileRes, categoriesRes] = await Promise.all([
+    supabase.from('profiles').select('*').eq('id', user.id).single(),
+    supabase.from('categories').select('*').eq('user_id', user.id).order('name'),
+  ])
 
-  return <SettingsPageClient userId={user.id} profile={profile} email={user.email ?? ''} />
+  return (
+    <SettingsPageClient
+      userId={user.id}
+      profile={profileRes.data}
+      email={user.email ?? ''}
+      initialCategories={categoriesRes.data ?? []}
+    />
+  )
 }

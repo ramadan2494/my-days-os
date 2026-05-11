@@ -1,14 +1,16 @@
 'use client'
 
 import { useState } from 'react'
-import { Profile } from '@/lib/supabase/types'
-import { Settings, MapPin, Bell, Moon, Briefcase, User, Save } from 'lucide-react'
+import { Profile, Category } from '@/lib/supabase/types'
+import { Settings, MapPin, Bell, Briefcase, User, Save, Tag, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { createClient } from '@/lib/supabase/client'
 
 interface SettingsPageClientProps {
   userId: string
   profile: Profile | null
   email: string
+  initialCategories: Category[]
 }
 
 const PRAYER_METHODS = [
@@ -18,7 +20,14 @@ const PRAYER_METHODS = [
   { id: 'Makkah', name: 'Umm al-Qura (Makkah)' },
 ]
 
-export default function SettingsPageClient({ userId, profile, email }: SettingsPageClientProps) {
+export default function SettingsPageClient({ userId, profile, email, initialCategories }: SettingsPageClientProps) {
+  const [categories, setCategories] = useState<Category[]>(initialCategories)
+  const [newCatName, setNewCatName] = useState('')
+  const [newCatColor, setNewCatColor] = useState('#6366f1')
+  const [newCatIcon, setNewCatIcon] = useState('📌')
+  const [catSaving, setCatSaving] = useState(false)
+  const supabase = createClient()
+
   const [form, setForm] = useState({
     full_name: profile?.full_name ?? '',
     prayer_method: profile?.prayer_method ?? 'MWL',
@@ -194,8 +203,105 @@ export default function SettingsPageClient({ userId, profile, email }: SettingsP
         <Save size={16} />
         {saving ? 'Saving...' : syncing ? 'Syncing prayers...' : 'Save Settings'}
       </button>
+
+      {/* Categories */}
+      <Section icon={Tag} title="Categories">
+        <div className="space-y-2 mb-4">
+          {categories.map((cat) => (
+            <div key={cat.id} className="flex items-center gap-3 p-3 bg-slate-800 rounded-xl">
+              <input
+                type="color"
+                value={cat.color}
+                onChange={async (e) => {
+                  const color = e.target.value
+                  setCategories((prev) => prev.map((c) => c.id === cat.id ? { ...c, color } : c))
+                  await supabase.from('categories').update({ color }).eq('id', cat.id)
+                }}
+                className="w-8 h-8 rounded-lg cursor-pointer border-0 bg-transparent flex-shrink-0"
+              />
+              <input
+                defaultValue={cat.icon}
+                onBlur={async (e) => {
+                  const icon = e.target.value.trim() || cat.icon
+                  setCategories((prev) => prev.map((c) => c.id === cat.id ? { ...c, icon } : c))
+                  await supabase.from('categories').update({ icon }).eq('id', cat.id)
+                }}
+                className="w-10 bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-center text-sm text-white focus:outline-none focus:border-purple-500"
+              />
+              <input
+                defaultValue={cat.name}
+                onBlur={async (e) => {
+                  const name = e.target.value.trim()
+                  if (!name) return
+                  setCategories((prev) => prev.map((c) => c.id === cat.id ? { ...c, name } : c))
+                  await supabase.from('categories').update({ name }).eq('id', cat.id)
+                }}
+                className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-purple-500"
+              />
+              {!cat.is_default && (
+                <button
+                  onClick={async () => {
+                    await supabase.from('categories').delete().eq('id', cat.id)
+                    setCategories((prev) => prev.filter((c) => c.id !== cat.id))
+                    toast.success('Category deleted')
+                  }}
+                  className="text-slate-500 hover:text-red-400 transition-colors flex-shrink-0"
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Add new category */}
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={newCatColor}
+            onChange={(e) => setNewCatColor(e.target.value)}
+            className="w-8 h-8 rounded-lg cursor-pointer border-0 bg-transparent flex-shrink-0"
+          />
+          <input
+            placeholder="🏷️"
+            value={newCatIcon}
+            onChange={(e) => setNewCatIcon(e.target.value)}
+            className="w-10 bg-slate-800 border border-slate-700 rounded-xl px-2 py-2 text-center text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+          />
+          <input
+            placeholder="Category name"
+            value={newCatName}
+            onChange={(e) => setNewCatName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addCategory()}
+            className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
+          />
+          <button
+            onClick={addCategory}
+            disabled={!newCatName.trim() || catSaving}
+            className="flex items-center gap-1 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white px-3 py-2 rounded-xl text-sm transition-colors flex-shrink-0"
+          >
+            <Plus size={14} /> Add
+          </button>
+        </div>
+      </Section>
     </div>
   )
+
+  async function addCategory() {
+    if (!newCatName.trim() || catSaving) return
+    setCatSaving(true)
+    const { data, error } = await supabase
+      .from('categories')
+      .insert({ user_id: userId, name: newCatName.trim(), color: newCatColor, icon: newCatIcon || '📌', is_default: false })
+      .select()
+      .single()
+    setCatSaving(false)
+    if (error) { toast.error('Failed to add category'); return }
+    setCategories((prev) => [...prev, data])
+    setNewCatName('')
+    setNewCatIcon('📌')
+    toast.success('Category added!')
+  }
 }
 
 function Section({ icon: Icon, title, children }: { icon: any, title: string, children: React.ReactNode }) {
