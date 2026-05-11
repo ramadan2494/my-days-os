@@ -22,6 +22,14 @@ const NAV_ITEMS = [
   { href: '/settings', icon: Settings, label: 'Settings', color: 'text-slate-400' },
 ]
 
+function getLocalWeekStart() {
+  const d = new Date()
+  const day = d.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  d.setDate(d.getDate() + diff)
+  return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
+}
+
 interface SidebarProps {
   profile: Profile | null
 }
@@ -81,10 +89,11 @@ export default function Sidebar({ profile }: SidebarProps) {
       <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
         {NAV_ITEMS.map(({ href, icon: Icon, label, color }) => {
           const isActive = pathname === href || (href !== '/' && pathname.startsWith(href))
+          const navHref = href === '/week' ? `/week?ws=${getLocalWeekStart()}` : href
           return (
             <Link
               key={href}
-              href={href}
+              href={navHref}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all',
                 isActive
