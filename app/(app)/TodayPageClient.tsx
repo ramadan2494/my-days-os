@@ -25,6 +25,7 @@ import {
   ChevronUp,
   Play,
   StopCircle,
+  Pencil,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -230,6 +231,12 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
     if (error) { toast.error('Failed to save time'); return }
     setItems((prev) => prev.map((it) => it.id === id ? { ...it, actual_minutes: newMinutes } : it))
     toast(`⏱ +${elapsed}m tracked on "${item.title}"`, { style: { background: '#1e293b', color: '#94a3b8' } })
+  }
+
+  async function saveEditedTime(itemId: string, newMinutes: number) {
+    const { error } = await supabase.from('daily_items').update({ actual_minutes: newMinutes }).eq('id', itemId)
+    if (error) { toast.error('Failed to save time'); return }
+    setItems((prev) => prev.map((it) => it.id === itemId ? { ...it, actual_minutes: newMinutes } : it))
   }
 
   function spawnFloat(amount: number) {
@@ -642,6 +649,7 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
           timerSeconds={timerSeconds}
           onStartTimer={startTimer}
           onStopTimer={stopTimer}
+          onEditTime={saveEditedTime}
         />
       )}
 
@@ -656,6 +664,7 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
         timerSeconds={timerSeconds}
         onStartTimer={startTimer}
         onStopTimer={stopTimer}
+        onEditTime={saveEditedTime}
       />
     </div>
   )
@@ -878,6 +887,7 @@ function TaskRow({
   timerSeconds,
   onStartTimer,
   onStopTimer,
+  onEditTime,
 }: {
   item: DailyItem & { categories?: Category }
   onToggle: (item: DailyItem & { categories?: Category }) => void
@@ -885,8 +895,26 @@ function TaskRow({
   timerSeconds: number
   onStartTimer: () => void
   onStopTimer: () => void
+  onEditTime: (id: string, minutes: number) => void
 }) {
   const router = useRouter()
+  const [editOpen, setEditOpen] = useState(false)
+  const [editH, setEditH] = useState('')
+  const [editM, setEditM] = useState('')
+
+  function openEdit() {
+    const cur = item.actual_minutes ?? 0
+    setEditH(String(Math.floor(cur / 60) || ''))
+    setEditM(String(cur % 60 || ''))
+    setEditOpen(true)
+  }
+
+  function saveEdit() {
+    const total = (parseInt(editH || '0', 10) * 60) + parseInt(editM || '0', 10)
+    onEditTime(item.id, Math.max(0, total))
+    setEditOpen(false)
+  }
+
   return (
     <div
       className={cn(
@@ -926,10 +954,61 @@ function TaskRow({
           {item.title}
         </p>
       )}
-      {(item.actual_minutes ?? 0) > 0 && (
-        <span className="text-[10px] font-mono text-slate-600 flex-shrink-0">
-          {formatMins(item.actual_minutes)}
-        </span>
+      {(item.actual_minutes ?? 0) > 0 ? (
+        editOpen ? (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <input autoFocus type="number" min="0" max="23" placeholder="h" value={editH}
+              onChange={(e) => setEditH(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditOpen(false) }}
+              className="w-8 bg-slate-700 border border-slate-600 rounded-md px-1 py-0.5 text-xs text-white text-center focus:outline-none focus:border-orange-400"
+            />
+            <span className="text-slate-600 text-xs">h</span>
+            <input type="number" min="0" max="59" placeholder="m" value={editM}
+              onChange={(e) => setEditM(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditOpen(false) }}
+              className="w-8 bg-slate-700 border border-slate-600 rounded-md px-1 py-0.5 text-xs text-white text-center focus:outline-none focus:border-orange-400"
+            />
+            <span className="text-slate-600 text-xs">m</span>
+            <button onClick={saveEdit} className="text-orange-400 hover:text-orange-300 text-xs font-bold px-1">✓</button>
+            <button onClick={() => setEditOpen(false)} className="text-slate-600 hover:text-slate-400 text-xs px-0.5">✕</button>
+          </div>
+        ) : (
+          <button
+            onClick={openEdit}
+            title="Edit time"
+            className="text-[10px] font-mono text-slate-500 hover:text-orange-400 flex-shrink-0 flex items-center gap-0.5 group/time transition-colors"
+          >
+            {formatMins(item.actual_minutes)}
+            <Pencil size={9} className="opacity-0 group-hover/time:opacity-100 transition-opacity" />
+          </button>
+        )
+      ) : (
+        editOpen ? (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <input autoFocus type="number" min="0" max="23" placeholder="h" value={editH}
+              onChange={(e) => setEditH(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditOpen(false) }}
+              className="w-8 bg-slate-700 border border-slate-600 rounded-md px-1 py-0.5 text-xs text-white text-center focus:outline-none focus:border-orange-400"
+            />
+            <span className="text-slate-600 text-xs">h</span>
+            <input type="number" min="0" max="59" placeholder="m" value={editM}
+              onChange={(e) => setEditM(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditOpen(false) }}
+              className="w-8 bg-slate-700 border border-slate-600 rounded-md px-1 py-0.5 text-xs text-white text-center focus:outline-none focus:border-orange-400"
+            />
+            <span className="text-slate-600 text-xs">m</span>
+            <button onClick={saveEdit} className="text-orange-400 hover:text-orange-300 text-xs font-bold px-1">✓</button>
+            <button onClick={() => setEditOpen(false)} className="text-slate-600 hover:text-slate-400 text-xs px-0.5">✕</button>
+          </div>
+        ) : (
+          <button
+            onClick={openEdit}
+            title="Log time"
+            className="opacity-0 group-hover/row:opacity-100 p-1 rounded-lg text-slate-500 hover:text-orange-400 hover:bg-orange-500/10 transition-all flex-shrink-0"
+          >
+            <Pencil size={12} />
+          </button>
+        )
       )}
       {item.status === 'done' && item.xp_earned > 0 && (
         <span className="text-xs text-yellow-400 font-medium flex-shrink-0">
@@ -982,6 +1061,7 @@ function TaskSections({
   timerSeconds,
   onStartTimer,
   onStopTimer,
+  onEditTime,
 }: {
   items: (DailyItem & { categories?: Category })[]
   onToggle: (item: DailyItem & { categories?: Category }) => void
@@ -989,6 +1069,7 @@ function TaskSections({
   timerSeconds: number
   onStartTimer: (id: string) => void
   onStopTimer: () => void
+  onEditTime: (id: string, minutes: number) => void
 }) {
   return (
     <div className="space-y-3">
@@ -1021,6 +1102,7 @@ function TaskSections({
                   timerSeconds={timerSeconds}
                   onStartTimer={() => onStartTimer(item.id)}
                   onStopTimer={onStopTimer}
+                  onEditTime={onEditTime}
                 />
               ))}
             </div>
@@ -1028,6 +1110,72 @@ function TaskSections({
         )
       })}
     </div>
+  )
+}
+
+// ─── Bonus time-edit widget (shared between bonus rows) ───────────────────────
+function BonusTimeEdit({
+  item,
+  onEditTime,
+}: {
+  item: DailyItem & { categories?: Category }
+  onEditTime: (id: string, minutes: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [h, setH] = useState('')
+  const [m, setM] = useState('')
+
+  function openEdit() {
+    const cur = item.actual_minutes ?? 0
+    setH(String(Math.floor(cur / 60) || ''))
+    setM(String(cur % 60 || ''))
+    setOpen(true)
+  }
+
+  function save() {
+    const total = (parseInt(h || '0', 10) * 60) + parseInt(m || '0', 10)
+    onEditTime(item.id, Math.max(0, total))
+    setOpen(false)
+  }
+
+  if (open) {
+    return (
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <input autoFocus type="number" min="0" max="23" placeholder="h" value={h}
+          onChange={(e) => setH(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setOpen(false) }}
+          className="w-8 bg-slate-700 border border-slate-600 rounded-md px-1 py-0.5 text-xs text-white text-center focus:outline-none focus:border-orange-400"
+        />
+        <span className="text-slate-600 text-xs">h</span>
+        <input type="number" min="0" max="59" placeholder="m" value={m}
+          onChange={(e) => setM(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setOpen(false) }}
+          className="w-8 bg-slate-700 border border-slate-600 rounded-md px-1 py-0.5 text-xs text-white text-center focus:outline-none focus:border-orange-400"
+        />
+        <span className="text-slate-600 text-xs">m</span>
+        <button onClick={save} className="text-orange-400 hover:text-orange-300 text-xs font-bold px-1">✓</button>
+        <button onClick={() => setOpen(false)} className="text-slate-600 hover:text-slate-400 text-xs px-0.5">✕</button>
+      </div>
+    )
+  }
+
+  if ((item.actual_minutes ?? 0) > 0) {
+    return (
+      <button onClick={openEdit} title="Edit time"
+        className="text-[10px] font-mono text-slate-500 hover:text-orange-400 flex-shrink-0 flex items-center gap-0.5 group/time transition-colors"
+      >
+        {formatMins(item.actual_minutes)}
+        <Pencil size={9} className="opacity-0 group-hover/time:opacity-100 transition-opacity" />
+      </button>
+    )
+  }
+
+  return (
+    <button onClick={openEdit} title="Log time"
+      className="opacity-0 group-hover/row:opacity-100 p-1 rounded-lg text-slate-500 hover:text-orange-400 hover:bg-orange-500/10 transition-all flex-shrink-0"
+    >
+      <Pencil size={12} />
+    </button>
   )
 }
 
@@ -1042,6 +1190,7 @@ function BonusSection({
   timerSeconds,
   onStartTimer,
   onStopTimer,
+  onEditTime,
 }: {
   items: (DailyItem & { categories?: Category })[]
   onToggle: (item: DailyItem & { categories?: Category }) => void
@@ -1052,6 +1201,7 @@ function BonusSection({
   timerSeconds: number
   onStartTimer: (id: string) => void
   onStopTimer: () => void
+  onEditTime: (id: string, minutes: number) => void
 }) {
   const supabase = createClient()
   const router = useRouter()
@@ -1165,11 +1315,10 @@ function BonusSection({
               </p>
             )}
             <span className="text-[10px] text-yellow-500 font-bold flex-shrink-0">BONUS</span>
-            {(item.actual_minutes ?? 0) > 0 && (
-              <span className="text-[10px] font-mono text-slate-600 flex-shrink-0">
-                {formatMins(item.actual_minutes)}
-              </span>
-            )}
+            <BonusTimeEdit
+              item={item}
+              onEditTime={onEditTime}
+            />
             {item.status === 'done' && item.xp_earned > 0 && (
               <span className="text-xs text-yellow-400 font-medium flex-shrink-0">+{item.xp_earned} XP</span>
             )}
