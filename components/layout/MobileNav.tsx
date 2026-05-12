@@ -2,12 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, CalendarRange, BarChart2, Settings } from 'lucide-react'
+import { LayoutDashboard, CalendarRange, BarChart2, Settings, Trophy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const MOBILE_NAV = [
   { href: '/', icon: LayoutDashboard, label: 'Today' },
   { href: '/week', icon: CalendarRange, label: 'Week' },
+  { href: '/journey', icon: Trophy, label: 'Journey' },
   { href: '/stats', icon: BarChart2, label: 'Stats' },
   { href: '/settings', icon: Settings, label: 'Settings' },
 ]

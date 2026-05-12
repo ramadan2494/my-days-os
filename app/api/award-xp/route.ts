@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { checkAndAwardBadges } from '@/lib/badges'
+import { updateOverallStreak, updatePrayerStreak } from '@/lib/streaks'
 
 function calcXP({
   category_name,
@@ -49,7 +51,7 @@ export async function POST(request: Request) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('xp, level')
+    .select('xp, level, daily_streak, prayer_streak')
     .eq('id', user.id)
     .single()
 
@@ -62,47 +64,79 @@ export async function POST(request: Request) {
     .update({ xp: new_xp, level: new_level, updated_at: new Date().toISOString() })
     .eq('id', user.id)
 
-  const new_badges = await checkBadges(supabase, user.id, new_xp)
+  // Update streaks
+  const [new_daily_streak, new_prayer_streak] = await Promise.all([
+    updateOverallStreak(supabase, user.id),
+    is_prayer ? updatePrayerStreak(supabase, user.id) : Promise.resolve(profile?.prayer_streak ?? 0),
+  ])
+
+  // Build badge context — fetch counts needed
+  const [{ count: totalDone }, { data: catCounts }] = await Promise.all([
+    supabase
+      .from('daily_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('status', 'done'),
+    supabase
+      .from('daily_items')
+      .select('categories!inner(name), status')
+      .eq('user_id', user.id)
+      .eq('status', 'done'),
+  ])
+
+  const tasksByCategory: Record<string, number> = {}
+  for (const row of catCounts ?? []) {
+    const name = (row as { categories: { name: string } }).categories?.name
+    if (name) tasksByCategory[name] = (tasksByCategory[name] ?? 0) + 1
+  }
+
+  // Check if all 5 prayers done today
+  const today = new Date().toISOString().split('T')[0]
+  const { data: todayPrayers } = await supabase
+    .from('daily_items')
+    .select('status, title')
+    .eq('user_id', user.id)
+    .eq('scheduled_date', today)
+  const prayerNames = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']
+  const todayPrayerItems = (todayPrayers ?? []).filter((p: { title: string }) => prayerNames.includes(p.title))
+  const allPrayersDoneToday =
+    todayPrayerItems.length === 5 &&
+    todayPrayerItems.every((p: { status: string }) => p.status === 'done')
+
+  const new_badges = await checkAndAwardBadges(supabase, user.id, {
+    totalXp: new_xp,
+    level: new_level,
+    dailyStreak: new_daily_streak,
+    prayerStreak: new_prayer_streak,
+    totalTasksDone: totalDone ?? 0,
+    tasksByCategory,
+    allPrayersDoneToday,
+  })
 
   return NextResponse.json({
     xp_earned,
     new_total_xp: new_xp,
     new_level,
     level_up: new_level > old_level,
+    new_daily_streak,
+    new_prayer_streak,
+    new_badges,
+  })_xp,
+    level: new_level,
+    dailyStreak: new_daily_streak,
+    prayerStreak: new_prayer_streak,
+    totalTasksDone: totalDone ?? 0,
+    tasksByCategory,
+    allPrayersDoneToday,
+  })
+
+  return NextResponse.json({
+    xp_earned,
+    new_total_xp: new_xp,
+    new_level,
+    level_up: new_level > old_level,
+    new_daily_streak,
+    new_prayer_streak,
     new_badges,
   })
-}
-
-async function checkBadges(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-  totalXp: number
-) {
-  const { data: existing } = await supabase
-    .from('badges')
-    .select('badge_key')
-    .eq('user_id', userId)
-
-  const earned = new Set((existing ?? []).map((b: { badge_key: string }) => b.badge_key))
-  const toAward: Array<{ key: string; name: string; icon: string; desc: string }> = []
-
-  if (totalXp >= 1 && !earned.has('first_step'))
-    toAward.push({ key: 'first_step', name: 'First Step', icon: '🥇', desc: 'Completed your first item' })
-  if (totalXp >= 100 && !earned.has('100xp'))
-    toAward.push({ key: '100xp', name: '100 XP Club', icon: '💯', desc: 'Earned 100 total XP' })
-  if (totalXp >= 500 && !earned.has('500xp'))
-    toAward.push({ key: '500xp', name: 'Level Up Legend', icon: '⚡', desc: 'Earned 500 total XP' })
-
-  if (toAward.length > 0) {
-    await supabase.from('badges').insert(
-      toAward.map((b) => ({
-        user_id: userId,
-        badge_key: b.key,
-        badge_name: b.name,
-        badge_icon: b.icon,
-        badge_description: b.desc,
-      }))
-    )
-  }
-  return toAward
 }

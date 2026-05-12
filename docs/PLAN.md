@@ -108,3 +108,5 @@ Learning 📚 #f59e0b · Family 👨‍👩‍👦 #f97316 · Business 📈 #06b
 - [ ] lib/streaks.ts — updateOverallStreak() + updatePrayerStreak()
 
 ## Phase 8 - GAMIFICATION SCREEN THAT SHOW LEVEL AND ICON OR MY IMAGE MOVE AS LEVELS OR ROAD MOVE ON IT
+
+## Phase 9 - enhancements: in today section can click next to show next day until end of week 

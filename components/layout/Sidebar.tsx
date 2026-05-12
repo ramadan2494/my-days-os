@@ -9,6 +9,7 @@ import {
   Settings,
   LogOut,
   Zap,
+  Trophy,
 } from 'lucide-react'
 import { cn, getLevelTitle } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -19,6 +20,7 @@ const NAV_ITEMS = [
   { href: '/week', icon: CalendarRange, label: 'Week', color: 'text-indigo-400' },
   { href: '/', icon: LayoutDashboard, label: 'Today', color: 'text-blue-400' },
   { href: '/stats', icon: BarChart2, label: 'Stats', color: 'text-yellow-400' },
+  { href: '/journey', icon: Trophy, label: 'Journey', color: 'text-orange-400' },
   { href: '/settings', icon: Settings, label: 'Settings', color: 'text-slate-400' },
 ]
 
