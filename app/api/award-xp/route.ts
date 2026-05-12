@@ -86,7 +86,8 @@ export async function POST(request: Request) {
 
   const tasksByCategory: Record<string, number> = {}
   for (const row of catCounts ?? []) {
-    const name = (row as { categories: { name: string } }).categories?.name
+    const categories = (row as unknown as { categories: { name: string } | { name: string }[] }).categories
+    const name = Array.isArray(categories) ? categories[0]?.name : categories?.name
     if (name) tasksByCategory[name] = (tasksByCategory[name] ?? 0) + 1
   }
 
