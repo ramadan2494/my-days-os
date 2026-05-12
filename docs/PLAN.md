@@ -110,3 +110,20 @@ Learning 📚 #f59e0b · Family 👨‍👩‍👦 #f97316 · Business 📈 #06b
 ## Phase 8 - GAMIFICATION SCREEN THAT SHOW LEVEL AND ICON OR MY IMAGE MOVE AS LEVELS OR ROAD MOVE ON IT
 
 ## Phase 9 - enhancements: in today section can click next to show next day until end of week 
+
+## Phase 10  — Week grid: add task per day
+Add a '+' button to each day column in the week grid view. Tapping it opens a quick-add form (title, category, priority) that saves the new task to both the weekly plan and that specific day — instantly reflected in both views.
+
+Phase 10 addition — Sports category
+Add Sports 🏃 #ef4444 to the default categories list and include it in the Supabase trigger that seeds categories on new user signup.
+
+
+
+// not now
+## Phase 1000 — Month plan view with expandable week rows
+Add a /plan page showing the current month as rows of weeks. Each week row shows a summary strip (total items, completion %, category color dots) and expands on click to reveal the existing week grid component with its '+' per day button. AI generation works at both levels — generate a full month plan (Claude distributes items across all 4 weeks) or generate a single week inside the month. Clicking any day in the expanded grid navigates to /today?date=YYYY-MM-DD. All items created here reflect in the existing weekly_items and daily_items tables — no new data model needed.
+
+
+
+## Phase 1001 — Growth Roadmap
+Add a /roadmap page with a tab in the nav. On first visit, an AI wizard asks 3–4 questions: current role/level, tech or domain knowledge, and what the user wants to become. Claude generates a structured multi-level roadmap (e.g. Junior → Mid → Senior → Architect) with skills, topics, and milestones per level. Each level shows as a card with expandable skill areas. A "Load into Plan" button takes any level's topics and sends them to the existing AI week/month plan generator to distribute across time. Roadmap is saved to a new roadmaps table so it persists and can be updated as the user progresses.
