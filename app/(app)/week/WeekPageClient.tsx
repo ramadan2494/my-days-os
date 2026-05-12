@@ -91,8 +91,10 @@ export default function WeekPageClient({
   }
 
   async function deleteItem(id: string) {
+    await supabase.from('daily_items').delete().eq('weekly_item_id', id)
     await supabase.from('weekly_items').delete().eq('id', id)
     setWeeklyItems((prev) => prev.filter((it) => it.id !== id))
+    setDailyItems((prev) => prev.filter((it) => it.weekly_item_id !== id))
   }
 
   async function distribute() {

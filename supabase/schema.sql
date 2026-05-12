@@ -740,7 +740,8 @@ begin
     (p_user_id, 'Learning', '#f59e0b', '📚', false),
     (p_user_id, 'Family',   '#f97316', '👨‍👩‍👦', false),
     (p_user_id, 'Business', '#06b6d4', '📈', false),
-    (p_user_id, 'Book',     '#ec4899', '📖', false)
+    (p_user_id, 'Book',     '#ec4899', '📖', false),
+    (p_user_id, 'Sports',   '#ef4444', '🏃', false)
   on conflict (user_id, name) do nothing;
 end;
 $$ language plpgsql security definer;

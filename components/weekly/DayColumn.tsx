@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { DailyItem, WeeklyItem, Category } from '@/lib/supabase/types'
 import { createClient } from '@/lib/supabase/client'
-import { CheckCircle, Circle, GripVertical, Plus, X, Check } from 'lucide-react'
+import { CheckCircle, Circle, GripVertical, Plus, X, Check, Pencil } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 
@@ -33,8 +33,11 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
   const [addCategoryId, setAddCategoryId] = useState('')
   const [addPriority, setAddPriority] = useState<'high' | 'medium' | 'low'>('medium')
   const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
   const dragEnterCount = useRef(0)
   const titleInputRef = useRef<HTMLInputElement>(null)
+  const editInputRef = useRef<HTMLInputElement>(null)
 
   const nonPrayerCategories = categories.filter((c) => c.name !== 'Prayers')
 
@@ -135,6 +138,30 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
     setTimeout(() => titleInputRef.current?.focus(), 0)
   }
 
+  function startEdit(item: DailyItem & { categories?: Category }) {
+    setEditingId(item.id)
+    setEditTitle(item.title)
+    setTimeout(() => editInputRef.current?.focus(), 0)
+  }
+
+  async function saveEdit(item: DailyItem & { categories?: Category }) {
+    const trimmed = editTitle.trim()
+    setEditingId(null)
+    if (!trimmed || trimmed === item.title) return
+    const { data, error } = await supabase
+      .from('daily_items')
+      .update({ title: trimmed })
+      .eq('id', item.id)
+      .select('*, categories(*)')
+      .single()
+    if (error) { toast.error('Failed to rename'); return }
+    // Also rename the parent weekly_item if linked
+    if (item.weekly_item_id) {
+      await supabase.from('weekly_items').update({ title: trimmed }).eq('id', item.weekly_item_id)
+    }
+    onItemUpdate(data)
+  }
+
   return (
     <div
       className={cn(
@@ -208,33 +235,59 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
             className={cn(
               'group/item flex items-start gap-1 p-1.5 rounded-lg text-xs transition-all',
               draggingId === item.id ? 'opacity-50 ring-1 ring-blue-400/50 bg-blue-500/10' : '',
+              editingId === item.id ? 'bg-slate-800 ring-1 ring-blue-500/40' : '',
               item.status === 'done' ? 'opacity-60 hover:opacity-80 hover:bg-slate-800 cursor-pointer' : 'hover:bg-slate-800 cursor-grab active:cursor-grabbing',
             )}
           >
             <GripVertical size={10} className="text-slate-700 group-hover/item:text-slate-500 mt-0.5 flex-shrink-0 transition-colors" />
-            <button
-              onClick={() => toggleItem(item)}
-              className="flex items-start gap-1 flex-1 text-left min-w-0"
-            >
-              {item.status === 'done' ? (
-                <CheckCircle size={12} className="text-green-400 mt-0.5 flex-shrink-0 group-hover/item:text-red-400 transition-colors" />
-              ) : (
-                <Circle size={12} className="text-slate-500 mt-0.5 flex-shrink-0" />
-              )}
-              <span
-                className={cn(
-                  'leading-tight break-words whitespace-normal line-clamp-3',
-                  item.status === 'done' ? 'line-through text-slate-500' : 'text-slate-300'
-                )}
-                style={
-                  item.categories && item.status !== 'done'
-                    ? { color: item.categories.color }
-                    : {}
-                }
+            {editingId === item.id ? (
+              <input
+                ref={editInputRef}
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveEdit(item)
+                  if (e.key === 'Escape') setEditingId(null)
+                }}
+                onBlur={() => saveEdit(item)}
+                onClick={(e) => e.stopPropagation()}
+                className="flex-1 bg-transparent border-none outline-none text-white text-[11px] min-w-0"
+              />
+            ) : (
+              <button
+                onClick={() => toggleItem(item)}
+                className="flex items-start gap-1 flex-1 text-left min-w-0"
               >
-                {item.categories?.icon} {item.title}
-              </span>
-            </button>
+                {item.status === 'done' ? (
+                  <CheckCircle size={12} className="text-green-400 mt-0.5 flex-shrink-0 group-hover/item:text-red-400 transition-colors" />
+                ) : (
+                  <Circle size={12} className="text-slate-500 mt-0.5 flex-shrink-0" />
+                )}
+                <span
+                  className={cn(
+                    'leading-tight break-words whitespace-normal line-clamp-3',
+                    item.status === 'done' ? 'line-through text-slate-500' : 'text-slate-300'
+                  )}
+                  style={
+                    item.categories && item.status !== 'done'
+                      ? { color: item.categories.color }
+                      : {}
+                  }
+                >
+                  {item.categories?.icon} {item.title}
+                </span>
+              </button>
+            )}
+            {editingId !== item.id && item.status !== 'done' && (
+              <button
+                onClick={(e) => { e.stopPropagation(); startEdit(item) }}
+                title="Rename"
+                className="opacity-0 group-hover/item:opacity-100 p-0.5 text-slate-600 hover:text-blue-400 flex-shrink-0 transition-all"
+              >
+                <Pencil size={9} />
+              </button>
+            )}
           </div>
         ))}
         {items.length === 0 && !showAddForm && (
