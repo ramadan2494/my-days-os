@@ -285,6 +285,7 @@ export interface WeeklyItem {
   description: string | null
   target_days: number
   priority: WeeklyItemPriority
+  link: string | null
   created_at: string
   categories?: Category
 }
@@ -300,6 +301,8 @@ export interface DailyItem {
   status: DailyItemStatus
   xp_earned: number
   completed_at: string | null
+  link: string | null
+  is_bonus: boolean
   created_at: string
   categories?: Category
 }

@@ -42,6 +42,7 @@ export default function WeekPlanCreator({
     category_id: '',
     priority: 'medium',
     target_days: 1,
+    link: '',
   })
   const supabase = createClient()
 
@@ -120,6 +121,7 @@ export default function WeekPlanCreator({
         title: manualForm.title.trim(),
         priority: manualForm.priority,
         target_days: manualForm.target_days,
+        link: manualForm.link.trim() || null,
       })
       .select('*, categories(*)')
       .single()
@@ -128,7 +130,7 @@ export default function WeekPlanCreator({
       return
     }
     onItemsCreated([data])
-    setManualForm({ title: '', category_id: '', priority: 'medium', target_days: 1 })
+    setManualForm({ title: '', category_id: '', priority: 'medium', target_days: 1, link: '' })
     toast.success('Item added!')
   }
 
@@ -306,6 +308,16 @@ export default function WeekPlanCreator({
                       </option>
                     ))}
                 </select>
+              </div>
+              <div>
+                <label className="text-sm text-slate-400 mb-1.5 block">Link (optional)</label>
+                <input
+                  type="url"
+                  value={manualForm.link}
+                  onChange={(e) => setManualForm((f) => ({ ...f, link: e.target.value }))}
+                  placeholder="https://course-link.com"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

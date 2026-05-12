@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { DailyItem, WeeklyItem, Category } from '@/lib/supabase/types'
 import { createClient } from '@/lib/supabase/client'
-import { CheckCircle, Circle, GripVertical, Plus, X, Check, Pencil } from 'lucide-react'
+import { CheckCircle, Circle, GripVertical, Plus, X, Check, Pencil, Link2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 
@@ -32,6 +32,7 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
   const [addTitle, setAddTitle] = useState('')
   const [addCategoryId, setAddCategoryId] = useState('')
   const [addPriority, setAddPriority] = useState<'high' | 'medium' | 'low'>('medium')
+  const [addLink, setAddLink] = useState('')
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
@@ -101,6 +102,7 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
           title: addTitle.trim(),
           priority: addPriority,
           target_days: 1,
+          link: addLink.trim() || null,
         })
         .select('*, categories(*)')
         .single()
@@ -116,6 +118,7 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
           title: addTitle.trim(),
           scheduled_date: date,
           status: 'pending',
+          link: addLink.trim() || null,
         })
         .select('*, categories(*)')
         .single()
@@ -125,6 +128,7 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
       setAddTitle('')
       setAddCategoryId('')
       setAddPriority('medium')
+      setAddLink('')
       setShowAddForm(false)
       toast.success(`Added to ${dayName}!`)
     } finally {
@@ -280,13 +284,27 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
               </button>
             )}
             {editingId !== item.id && item.status !== 'done' && (
-              <button
-                onClick={(e) => { e.stopPropagation(); startEdit(item) }}
-                title="Rename"
-                className="opacity-0 group-hover/item:opacity-100 p-0.5 text-slate-600 hover:text-blue-400 flex-shrink-0 transition-all"
-              >
-                <Pencil size={9} />
-              </button>
+              <>
+                {item.link && (
+                  <a
+                    href={item.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    title="Open link"
+                    className="opacity-0 group-hover/item:opacity-100 p-0.5 text-slate-600 hover:text-blue-400 flex-shrink-0 transition-all"
+                  >
+                    <Link2 size={9} />
+                  </a>
+                )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); startEdit(item) }}
+                  title="Rename"
+                  className="opacity-0 group-hover/item:opacity-100 p-0.5 text-slate-600 hover:text-blue-400 flex-shrink-0 transition-all"
+                >
+                  <Pencil size={9} />
+                </button>
+              </>
             )}
           </div>
         ))}
@@ -310,6 +328,13 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
               if (e.key === 'Escape') { setShowAddForm(false); setAddTitle('') }
             }}
             placeholder="Task title…"
+            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
+          />
+          <input
+            type="url"
+            value={addLink}
+            onChange={(e) => setAddLink(e.target.value)}
+            placeholder="Link (optional)…"
             className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
           />
           <select

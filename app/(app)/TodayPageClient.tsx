@@ -16,6 +16,13 @@ import {
   Clock,
   RotateCcw,
   RefreshCw,
+  Link2,
+  Timer,
+  Plus,
+  X,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -552,8 +559,17 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
         )}
       </div>
 
+      {/* AI Day Organiser — only on current day */}
+      {isCurrentDay && (
+        <AIDayOrganiser
+          date={date}
+          userId={userId}
+          onAdd={(item) => setItems((prev) => [...prev, item])}
+        />
+      )}
+
       {/* Tasks — grouped by category section */}
-      {taskItems.length === 0 ? (
+      {taskItems.filter((it) => !it.is_bonus).length === 0 ? (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center">
           <p className="text-slate-400 text-sm">No tasks for today</p>
           <a href="/week" className="text-blue-400 text-sm hover:underline mt-1 inline-block">
@@ -561,7 +577,179 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
           </a>
         </div>
       ) : (
-        <TaskSections items={taskItems} onToggle={handleToggleItem} />
+        <TaskSections items={taskItems.filter((it) => !it.is_bonus)} onToggle={handleToggleItem} />
+      )}
+
+      {/* Bonus Tasks Section */}
+      <BonusSection
+        items={taskItems.filter((it) => it.is_bonus)}
+        onToggle={handleToggleItem}
+        userId={userId}
+        date={date}
+        onAdd={(item) => setItems((prev) => [...prev, item])}
+      />
+    </div>
+  )
+}
+
+// ─── AI Day Organiser ──────────────────────────────────────────────────────────
+interface Suggestion {
+  title: string
+  category_id: string
+  category_name: string
+  category_icon: string
+  reason: string
+}
+
+function AIDayOrganiser({
+  date,
+  userId,
+  onAdd,
+}: {
+  date: string
+  userId: string
+  onAdd: (item: DailyItem & { categories?: Category }) => void
+}) {
+  const supabase = createClient()
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState('')
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  const [adding, setAdding] = useState<string | null>(null) // suggestion title being added
+  const [addedTitles, setAddedTitles] = useState<Set<string>>(new Set())
+  const [error, setError] = useState('')
+
+  async function review() {
+    setLoading(true)
+    setError('')
+    setMessage('')
+    setSuggestions([])
+    setAddedTitles(new Set())
+    try {
+      const res = await fetch('/api/claude/day-organiser', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
+      setMessage(data.message ?? '')
+      setSuggestions(data.suggestions ?? [])
+      setOpen(true)
+    } catch {
+      setError('Failed to reach AI. Try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function addSuggestion(s: Suggestion) {
+    setAdding(s.title)
+    try {
+      const { data, error: err } = await supabase
+        .from('daily_items')
+        .insert({
+          user_id: userId,
+          category_id: s.category_id,
+          title: s.title,
+          scheduled_date: date,
+          status: 'pending',
+          is_bonus: false,
+          link: null,
+        })
+        .select('*, categories(*)')
+        .single()
+      if (err) { toast.error('Failed to add task'); return }
+      onAdd(data)
+      setAddedTitles((prev) => new Set([...prev, s.title]))
+      toast.success(`✅ Added: ${s.title}`)
+    } finally {
+      setAdding(null)
+    }
+  }
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+      {/* Header row */}
+      <div className="flex items-center gap-2 px-4 py-3">
+        <Sparkles size={15} className="text-violet-400 flex-shrink-0" />
+        <span className="font-semibold text-white text-sm flex-1">AI Day Review</span>
+        {(message || error) && (
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="p-1 rounded-lg text-slate-500 hover:text-slate-300 transition-colors"
+          >
+            {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+        )}
+        <button
+          onClick={review}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors"
+        >
+          {loading ? (
+            <span className="animate-pulse">Reviewing…</span>
+          ) : (
+            <>
+              <Sparkles size={11} /> Review Plan
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Content */}
+      {open && (message || error) && (
+        <div className="border-t border-slate-800 px-4 py-4 space-y-3">
+          {error && <p className="text-red-400 text-sm">{error}</p>}
+          {message && (
+            <p className="text-slate-300 text-sm leading-relaxed">{message}</p>
+          )}
+
+          {suggestions.length > 0 && (
+            <div className="space-y-2 pt-1">
+              <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">
+                Suggested additions
+              </p>
+              {suggestions.map((s) => {
+                const isAdded = addedTitles.has(s.title)
+                const isAdding = adding === s.title
+                return (
+                  <div
+                    key={s.title}
+                    className={cn(
+                      'flex items-start gap-3 p-3 rounded-xl border transition-all',
+                      isAdded
+                        ? 'border-green-500/20 bg-green-500/5 opacity-60'
+                        : 'border-slate-700 bg-slate-800/50',
+                    )}
+                  >
+                    <span className="text-lg flex-shrink-0 mt-0.5">{s.category_icon || '📌'}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-white">{s.title}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{s.reason}</p>
+                    </div>
+                    <button
+                      onClick={() => !isAdded && addSuggestion(s)}
+                      disabled={isAdded || isAdding}
+                      className={cn(
+                        'flex-shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors',
+                        isAdded
+                          ? 'bg-green-500/20 text-green-400 cursor-default'
+                          : 'bg-violet-600 hover:bg-violet-500 text-white',
+                      )}
+                    >
+                      {isAdded ? '✓ Added' : isAdding ? '…' : '+ Add'}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {suggestions.length === 0 && message && (
+            <p className="text-xs text-slate-600 italic">No suggestions — your plan looks good!</p>
+          )}
+        </div>
       )}
     </div>
   )
@@ -621,10 +809,11 @@ function TaskRow({
   item: DailyItem & { categories?: Category }
   onToggle: (item: DailyItem & { categories?: Category }) => void
 }) {
+  const router = useRouter()
   return (
     <div
       className={cn(
-        'flex items-center gap-3 p-3 bg-slate-800/60 rounded-xl transition-all',
+        'group/row flex items-center gap-3 p-3 bg-slate-800/60 rounded-xl transition-all',
         item.status === 'done' && 'opacity-55',
       )}
     >
@@ -640,18 +829,41 @@ function TaskRow({
       >
         {item.status === 'done' ? <CheckCircle size={18} /> : <Circle size={18} />}
       </button>
-      <p
-        className={cn(
-          'flex-1 text-sm min-w-0 truncate',
-          item.status === 'done' ? 'text-slate-500 line-through' : 'text-white',
-        )}
-      >
-        {item.title}
-      </p>
+      {item.link && item.status !== 'done' ? (
+        <a
+          href={item.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-1 text-sm min-w-0 truncate text-white hover:text-blue-400 transition-colors flex items-center gap-1.5 group"
+        >
+          <span className="truncate">{item.title}</span>
+          <Link2 size={12} className="flex-shrink-0 text-slate-500 group-hover:text-blue-400 transition-colors" />
+        </a>
+      ) : (
+        <p
+          className={cn(
+            'flex-1 text-sm min-w-0 truncate',
+            item.status === 'done' ? 'text-slate-500 line-through' : 'text-white',
+          )}
+        >
+          {item.title}
+        </p>
+      )}
       {item.status === 'done' && item.xp_earned > 0 && (
         <span className="text-xs text-yellow-400 font-medium flex-shrink-0">
           +{item.xp_earned} XP
         </span>
+      )}
+      {item.status !== 'done' && (
+        <button
+          onClick={() =>
+            router.push(`/pomodoro?task_id=${item.id}&title=${encodeURIComponent(item.title)}`)
+          }
+          title="Focus with Pomodoro"
+          className="opacity-0 group-hover/row:opacity-100 flex-shrink-0 p-1 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
+        >
+          <Timer size={14} />
+        </button>
       )}
     </div>
   )
@@ -693,6 +905,198 @@ function TaskSections({
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ─── Bonus Section ─────────────────────────────────────────────────────────────
+function BonusSection({
+  items,
+  onToggle,
+  userId,
+  date,
+  onAdd,
+}: {
+  items: (DailyItem & { categories?: Category })[]
+  onToggle: (item: DailyItem & { categories?: Category }) => void
+  userId: string
+  date: string
+  onAdd: (item: DailyItem & { categories?: Category }) => void
+}) {
+  const supabase = createClient()
+  const router = useRouter()
+  const [showForm, setShowForm] = useState(false)
+  const [title, setTitle] = useState('')
+  const [link, setLink] = useState('')
+  const [categoryId, setCategoryId] = useState('')
+  const [categories, setCategories] = useState<Category[]>([])
+  const [adding, setAdding] = useState(false)
+
+  useEffect(() => {
+    supabase
+      .from('categories')
+      .select('*')
+      .eq('user_id', userId)
+      .neq('name', 'Prayers')
+      .order('name')
+      .then(({ data }) => {
+        if (data) {
+          setCategories(data)
+          if (data.length > 0) setCategoryId(data[0].id)
+        }
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
+
+  async function addBonus() {
+    if (!title.trim() || !categoryId) return
+    setAdding(true)
+    try {
+      const { data, error } = await supabase
+        .from('daily_items')
+        .insert({
+          user_id: userId,
+          category_id: categoryId,
+          title: title.trim(),
+          scheduled_date: date,
+          status: 'pending',
+          is_bonus: true,
+          link: link.trim() || null,
+        })
+        .select('*, categories(*)')
+        .single()
+      if (error) { toast.error('Failed to add bonus task'); return }
+      onAdd(data)
+      setTitle('')
+      setLink('')
+      setShowForm(false)
+      toast.success('⭐ Bonus task added!')
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  return (
+    <div className="bg-slate-900 border border-yellow-500/30 rounded-2xl overflow-hidden" style={{ borderLeftColor: '#eab308', borderLeftWidth: 3 }}>
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-800/60">
+        <span>⭐</span>
+        <span className="font-semibold text-yellow-400 text-sm">Bonus Tasks</span>
+        <span className="text-[10px] text-slate-600 ml-1 font-normal">101%</span>
+        <span className="ml-auto text-xs text-slate-500">
+          {items.filter((it) => it.status === 'done').length}/{items.length}
+        </span>
+        <button
+          onClick={() => setShowForm((v) => !v)}
+          className="p-1 rounded-lg text-slate-500 hover:text-yellow-400 hover:bg-yellow-500/10 transition-colors"
+          title="Add bonus task"
+        >
+          {showForm ? <X size={14} /> : <Plus size={14} />}
+        </button>
+      </div>
+
+      <div className="p-3 space-y-2">
+        {items.length === 0 && !showForm && (
+          <p className="text-slate-600 text-xs text-center py-2">
+            No bonus tasks yet — add something extra ⭐
+          </p>
+        )}
+        {items.map((item) => (
+          <div
+            key={item.id}
+            className={cn(
+              'group/row flex items-center gap-3 p-3 bg-yellow-500/5 border border-yellow-500/10 rounded-xl transition-all',
+              item.status === 'done' && 'opacity-55',
+            )}
+          >
+            <button
+              onClick={() => onToggle(item)}
+              className={cn(
+                'flex-shrink-0 transition-colors',
+                item.status === 'done'
+                  ? 'text-green-400 hover:text-red-400'
+                  : 'text-yellow-500 hover:text-green-400',
+              )}
+            >
+              {item.status === 'done' ? <CheckCircle size={18} /> : <Circle size={18} />}
+            </button>
+            {item.link && item.status !== 'done' ? (
+              <a
+                href={item.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 text-sm text-white hover:text-blue-400 flex items-center gap-1.5 group truncate"
+              >
+                <span className="truncate">{item.title}</span>
+                <Link2 size={12} className="flex-shrink-0 text-slate-500 group-hover:text-blue-400" />
+              </a>
+            ) : (
+              <p className={cn('flex-1 text-sm truncate', item.status === 'done' ? 'text-slate-500 line-through' : 'text-white')}>
+                {item.title}
+              </p>
+            )}
+            <span className="text-[10px] text-yellow-500 font-bold flex-shrink-0">BONUS</span>
+            {item.status === 'done' && item.xp_earned > 0 && (
+              <span className="text-xs text-yellow-400 font-medium flex-shrink-0">+{item.xp_earned} XP</span>
+            )}
+            {item.status !== 'done' && (
+              <button
+                onClick={() => router.push(`/pomodoro?task_id=${item.id}&title=${encodeURIComponent(item.title)}`)}
+                title="Focus with Pomodoro"
+                className="opacity-0 group-hover/row:opacity-100 p-1 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
+              >
+                <Timer size={14} />
+              </button>
+            )}
+          </div>
+        ))}
+
+        {showForm && (
+          <div className="space-y-2 pt-1 border-t border-yellow-500/10">
+            <input
+              autoFocus
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addBonus(); if (e.key === 'Escape') setShowForm(false) }}
+              placeholder="Bonus task title…"
+              className="w-full bg-slate-800 border border-yellow-500/30 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-yellow-500"
+            />
+            {categories.length > 0 && (
+              <select
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-yellow-500"
+              >
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                ))}
+              </select>
+            )}
+            <input
+              type="url"
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              placeholder="Link (optional)…"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-yellow-500"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={addBonus}
+                disabled={adding || !title.trim() || !categoryId}
+                className="flex-1 py-2.5 bg-yellow-500 hover:bg-yellow-400 disabled:opacity-40 text-slate-900 rounded-xl text-sm font-bold transition-colors"
+              >
+                {adding ? '…' : '+ Add Bonus'}
+              </button>
+              <button
+                onClick={() => { setShowForm(false); setTitle(''); setLink('') }}
+                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl text-sm transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
