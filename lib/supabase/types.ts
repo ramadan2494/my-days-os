@@ -303,6 +303,7 @@ export interface DailyItem {
   completed_at: string | null
   link: string | null
   is_bonus: boolean
+  actual_minutes: number
   created_at: string
   categories?: Category
 }

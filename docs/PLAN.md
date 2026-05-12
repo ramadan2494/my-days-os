@@ -149,6 +149,13 @@ Navigate forward/backward through the current week from the Today view using pre
 - [x] Pomodoro timer — `/pomodoro` page with 25/5/15 min modes, SVG ring, chime, and "Mark task done" button; accessible via 🍅 icon on each task row
 - [x] AI day organiser — `POST /api/claude/day-organiser` calls Claude Haiku with today's task list; returns a short motivational review + 0–3 suggested tasks; "AI Day Review" card on the Today page lets you add suggestions with one tap
 
+## Phase 12 — Time Tracking ✅
+
+- [x] `actual_minutes` column on `daily_items` (migration: `004_time_tracking.sql`, default 0)
+- [x] Live stopwatch per task on Today view — hover to reveal ▶ button; shows `MM:SS` counter while running; ■ stop button saves elapsed minutes to DB and shows a toast
+- [x] Only one task can be timed at a time; timer resets automatically when navigating to a different day
+- [x] Tracked time badge (`1h 23m`) displayed on any task row with logged time
+- [x] Stats page — new “Time Tracked” section: total time this week, time-by-category horizontal bars, top 5 tasks by time
 ---
 
 ## Not Now

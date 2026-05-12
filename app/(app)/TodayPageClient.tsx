@@ -23,6 +23,8 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
+  Play,
+  StopCircle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -90,6 +92,19 @@ function getWeekEnd(from = new Date()) {
   return getLocalDateStr(d)
 }
 
+function formatTimerDisplay(secs: number): string {
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+function formatMins(mins: number): string {
+  if (mins < 60) return `${mins}m`
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
+}
+
 export default function TodayPageClient({ userId, profile, initialItems, date }: Props) {
   const [items, setItems] = useState(initialItems)
   const [xpFloats, setXpFloats] = useState<XPFloat[]>([])
@@ -98,6 +113,10 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
   const supabase = createClient()
   const floatCounter = useRef(0)
   const seedingRef = useRef(false)
+  const [activeTimerId, setActiveTimerId] = useState<string | null>(null)
+  const [timerSeconds, setTimerSeconds] = useState(0)
+  const timerStartRef = useRef<number>(0)
+  const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Compute client-side local date (server runs UTC so it may be off by ±1 day)
   const todayStr = getLocalDateStr()
@@ -110,6 +129,19 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
     setItems(initialItems)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialItems])
+
+  // Stop timer when navigating to a different day
+  useEffect(() => {
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current)
+    setActiveTimerId(null)
+    setTimerSeconds(0)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => { if (timerIntervalRef.current) clearInterval(timerIntervalRef.current) }
+  }, [])
 
   const [dateReady, setDateReady] = useState(true)
   useEffect(() => {
@@ -172,6 +204,32 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
     const next = getLocalDateStr(d)
     if (next > weekEndStr) return
     router.push(`/?date=${next}`)
+  }
+
+  function startTimer(itemId: string) {
+    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current)
+    setActiveTimerId(itemId)
+    setTimerSeconds(0)
+    timerStartRef.current = Date.now()
+    timerIntervalRef.current = setInterval(() => {
+      setTimerSeconds(Math.floor((Date.now() - timerStartRef.current) / 1000))
+    }, 1000)
+  }
+
+  async function stopTimer() {
+    if (!activeTimerId) return
+    if (timerIntervalRef.current) { clearInterval(timerIntervalRef.current); timerIntervalRef.current = null }
+    const elapsed = Math.max(1, Math.round((Date.now() - timerStartRef.current) / 60000))
+    const id = activeTimerId
+    setActiveTimerId(null)
+    setTimerSeconds(0)
+    const item = items.find((it) => it.id === id)
+    if (!item) return
+    const newMinutes = (item.actual_minutes ?? 0) + elapsed
+    const { error } = await supabase.from('daily_items').update({ actual_minutes: newMinutes }).eq('id', id)
+    if (error) { toast.error('Failed to save time'); return }
+    setItems((prev) => prev.map((it) => it.id === id ? { ...it, actual_minutes: newMinutes } : it))
+    toast(`⏱ +${elapsed}m tracked on "${item.title}"`, { style: { background: '#1e293b', color: '#94a3b8' } })
   }
 
   function spawnFloat(amount: number) {
@@ -577,7 +635,14 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
           </a>
         </div>
       ) : (
-        <TaskSections items={taskItems.filter((it) => !it.is_bonus)} onToggle={handleToggleItem} />
+        <TaskSections
+          items={taskItems.filter((it) => !it.is_bonus)}
+          onToggle={handleToggleItem}
+          activeTimerId={activeTimerId}
+          timerSeconds={timerSeconds}
+          onStartTimer={startTimer}
+          onStopTimer={stopTimer}
+        />
       )}
 
       {/* Bonus Tasks Section */}
@@ -587,6 +652,10 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
         userId={userId}
         date={date}
         onAdd={(item) => setItems((prev) => [...prev, item])}
+        activeTimerId={activeTimerId}
+        timerSeconds={timerSeconds}
+        onStartTimer={startTimer}
+        onStopTimer={stopTimer}
       />
     </div>
   )
@@ -805,9 +874,17 @@ const TASK_SECTIONS = [
 function TaskRow({
   item,
   onToggle,
+  isTimerActive,
+  timerSeconds,
+  onStartTimer,
+  onStopTimer,
 }: {
   item: DailyItem & { categories?: Category }
   onToggle: (item: DailyItem & { categories?: Category }) => void
+  isTimerActive: boolean
+  timerSeconds: number
+  onStartTimer: () => void
+  onStopTimer: () => void
 }) {
   const router = useRouter()
   return (
@@ -849,21 +926,50 @@ function TaskRow({
           {item.title}
         </p>
       )}
+      {(item.actual_minutes ?? 0) > 0 && (
+        <span className="text-[10px] font-mono text-slate-600 flex-shrink-0">
+          {formatMins(item.actual_minutes)}
+        </span>
+      )}
       {item.status === 'done' && item.xp_earned > 0 && (
         <span className="text-xs text-yellow-400 font-medium flex-shrink-0">
           +{item.xp_earned} XP
         </span>
       )}
       {item.status !== 'done' && (
-        <button
-          onClick={() =>
-            router.push(`/pomodoro?task_id=${item.id}&title=${encodeURIComponent(item.title)}`)
-          }
-          title="Focus with Pomodoro"
-          className="opacity-0 group-hover/row:opacity-100 flex-shrink-0 p-1 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
-        >
-          <Timer size={14} />
-        </button>
+        isTimerActive ? (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <span className="text-xs font-mono text-orange-400">
+              {formatTimerDisplay(timerSeconds)}
+            </span>
+            <button
+              onClick={onStopTimer}
+              title="Stop timer"
+              className="p-1 rounded-lg text-orange-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+            >
+              <StopCircle size={14} />
+            </button>
+          </div>
+        ) : (
+          <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-0.5 flex-shrink-0">
+            <button
+              onClick={onStartTimer}
+              title="Track time"
+              className="p-1 rounded-lg text-slate-500 hover:text-orange-400 hover:bg-orange-500/10 transition-all"
+            >
+              <Play size={14} />
+            </button>
+            <button
+              onClick={() =>
+                router.push(`/pomodoro?task_id=${item.id}&title=${encodeURIComponent(item.title)}`)
+              }
+              title="Focus with Pomodoro"
+              className="p-1 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
+            >
+              <Timer size={14} />
+            </button>
+          </div>
+        )
       )}
     </div>
   )
@@ -872,9 +978,17 @@ function TaskRow({
 function TaskSections({
   items,
   onToggle,
+  activeTimerId,
+  timerSeconds,
+  onStartTimer,
+  onStopTimer,
 }: {
   items: (DailyItem & { categories?: Category })[]
   onToggle: (item: DailyItem & { categories?: Category }) => void
+  activeTimerId: string | null
+  timerSeconds: number
+  onStartTimer: (id: string) => void
+  onStopTimer: () => void
 }) {
   return (
     <div className="space-y-3">
@@ -899,7 +1013,15 @@ function TaskSections({
             </div>
             <div className="p-3 space-y-2">
               {sectionItems.map((item) => (
-                <TaskRow key={item.id} item={item} onToggle={onToggle} />
+                <TaskRow
+                  key={item.id}
+                  item={item}
+                  onToggle={onToggle}
+                  isTimerActive={activeTimerId === item.id}
+                  timerSeconds={timerSeconds}
+                  onStartTimer={() => onStartTimer(item.id)}
+                  onStopTimer={onStopTimer}
+                />
               ))}
             </div>
           </div>
@@ -916,12 +1038,20 @@ function BonusSection({
   userId,
   date,
   onAdd,
+  activeTimerId,
+  timerSeconds,
+  onStartTimer,
+  onStopTimer,
 }: {
   items: (DailyItem & { categories?: Category })[]
   onToggle: (item: DailyItem & { categories?: Category }) => void
   userId: string
   date: string
   onAdd: (item: DailyItem & { categories?: Category }) => void
+  activeTimerId: string | null
+  timerSeconds: number
+  onStartTimer: (id: string) => void
+  onStopTimer: () => void
 }) {
   const supabase = createClient()
   const router = useRouter()
@@ -1035,17 +1165,46 @@ function BonusSection({
               </p>
             )}
             <span className="text-[10px] text-yellow-500 font-bold flex-shrink-0">BONUS</span>
+            {(item.actual_minutes ?? 0) > 0 && (
+              <span className="text-[10px] font-mono text-slate-600 flex-shrink-0">
+                {formatMins(item.actual_minutes)}
+              </span>
+            )}
             {item.status === 'done' && item.xp_earned > 0 && (
               <span className="text-xs text-yellow-400 font-medium flex-shrink-0">+{item.xp_earned} XP</span>
             )}
             {item.status !== 'done' && (
-              <button
-                onClick={() => router.push(`/pomodoro?task_id=${item.id}&title=${encodeURIComponent(item.title)}`)}
-                title="Focus with Pomodoro"
-                className="opacity-0 group-hover/row:opacity-100 p-1 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
-              >
-                <Timer size={14} />
-              </button>
+              activeTimerId === item.id ? (
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <span className="text-xs font-mono text-orange-400">
+                    {formatTimerDisplay(timerSeconds)}
+                  </span>
+                  <button
+                    onClick={onStopTimer}
+                    title="Stop timer"
+                    className="p-1 rounded-lg text-orange-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                  >
+                    <StopCircle size={14} />
+                  </button>
+                </div>
+              ) : (
+                <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-0.5 flex-shrink-0">
+                  <button
+                    onClick={() => onStartTimer(item.id)}
+                    title="Track time"
+                    className="p-1 rounded-lg text-slate-500 hover:text-orange-400 hover:bg-orange-500/10 transition-all"
+                  >
+                    <Play size={14} />
+                  </button>
+                  <button
+                    onClick={() => router.push(`/pomodoro?task_id=${item.id}&title=${encodeURIComponent(item.title)}`)}
+                    title="Focus with Pomodoro"
+                    className="p-1 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                  >
+                    <Timer size={14} />
+                  </button>
+                </div>
+              )
             )}
           </div>
         ))}

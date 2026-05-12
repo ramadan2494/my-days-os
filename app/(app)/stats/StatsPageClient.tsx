@@ -29,6 +29,13 @@ interface Props {
 
 const PRAYER_NAMES = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']
 
+function formatMins(mins: number): string {
+  if (mins < 60) return `${mins}m`
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
+}
+
 export default function StatsPageClient({
   profile,
   badges,
@@ -94,6 +101,28 @@ export default function StatsPageClient({
   }))
 
   const weekXpTotal = xpByDay.reduce((s, d) => s + d.xp, 0)
+
+  // Time tracked
+  const trackedItems = dailyItems.filter(
+    (it) => (it.actual_minutes ?? 0) > 0 && (it.categories as Category)?.name !== 'Prayers',
+  )
+  const totalTrackedMinutes = trackedItems.reduce((sum, it) => sum + (it.actual_minutes ?? 0), 0)
+  const timeByCategory = Array.from(
+    trackedItems
+      .reduce((map, item) => {
+        const cat = item.categories as Category | undefined
+        if (!cat) return map
+        const existing = map.get(cat.id) ?? { name: cat.name, color: cat.color, icon: cat.icon, minutes: 0 }
+        existing.minutes += item.actual_minutes ?? 0
+        map.set(cat.id, existing)
+        return map
+      }, new Map<string, { name: string; color: string; icon: string; minutes: number }>())
+      .values(),
+  ).sort((a, b) => b.minutes - a.minutes)
+  const topTasks = [...trackedItems]
+    .sort((a, b) => (b.actual_minutes ?? 0) - (a.actual_minutes ?? 0))
+    .slice(0, 5)
+  const maxCatMinutes = Math.max(...timeByCategory.map((c) => c.minutes), 1)
 
   return (
     <div className="space-y-6">
@@ -207,6 +236,60 @@ export default function StatsPageClient({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Time Tracked */}
+      {totalTrackedMinutes > 0 && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-white">⏱ Time Tracked</h2>
+            <span className="text-sm font-bold text-orange-400">{formatMins(totalTrackedMinutes)} this week</span>
+          </div>
+
+          {/* By category */}
+          {timeByCategory.length > 0 && (
+            <div className="space-y-3 mb-5">
+              {timeByCategory.map((cat) => (
+                <div key={cat.name}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-sm text-slate-300">{cat.icon} {cat.name}</span>
+                    <span className="text-xs text-slate-400 font-mono">{formatMins(cat.minutes)}</span>
+                  </div>
+                  <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${(cat.minutes / maxCatMinutes) * 100}%`,
+                        backgroundColor: cat.color,
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Top tasks by time */}
+          {topTasks.length > 0 && (
+            <div>
+              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium mb-2">Top tasks</p>
+              <div className="space-y-1.5">
+                {topTasks.map((task) => {
+                  const cat = task.categories as Category | undefined
+                  return (
+                    <div key={task.id} className="flex items-center gap-2">
+                      <span className="text-sm">{cat?.icon ?? '📌'}</span>
+                      <p className="flex-1 text-sm text-slate-300 truncate">{task.title}</p>
+                      <span className="text-xs font-mono text-orange-400 flex-shrink-0">
+                        {formatMins(task.actual_minutes ?? 0)}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
