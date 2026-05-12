@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { DailyItem, Category } from '@/lib/supabase/types'
+import { DailyItem, WeeklyItem, Category } from '@/lib/supabase/types'
 import { createClient } from '@/lib/supabase/client'
-import { CheckCircle, Circle, GripVertical } from 'lucide-react'
+import { CheckCircle, Circle, GripVertical, Plus, X, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 
@@ -13,18 +13,30 @@ interface Props {
   isToday: boolean
   items: (DailyItem & { categories?: Category })[]
   draggingId: string | null
+  userId: string
+  weekPlanId: string
+  categories: Category[]
   onItemUpdate: (item: DailyItem & { categories?: Category }) => void
   onDragStart: (id: string) => void
   onDragEnd: () => void
   onDrop: (targetDate: string) => void
+  onItemAdd: (dailyItem: DailyItem & { categories?: Category }, weeklyItem: WeeklyItem & { categories?: Category }) => void
 }
 
-export default function DayColumn({ date, dayName, isToday, items, draggingId, onItemUpdate, onDragStart, onDragEnd, onDrop }: Props) {
+export default function DayColumn({ date, dayName, isToday, items, draggingId, userId, weekPlanId, categories, onItemUpdate, onDragStart, onDragEnd, onDrop, onItemAdd }: Props) {
   const supabase = createClient()
   const dayNum = new Date(date + 'T12:00:00').getDate()
   const doneCount = items.filter((it) => it.status === 'done').length
   const [isOver, setIsOver] = useState(false)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [addTitle, setAddTitle] = useState('')
+  const [addCategoryId, setAddCategoryId] = useState('')
+  const [addPriority, setAddPriority] = useState<'high' | 'medium' | 'low'>('medium')
+  const [adding, setAdding] = useState(false)
   const dragEnterCount = useRef(0)
+  const titleInputRef = useRef<HTMLInputElement>(null)
+
+  const nonPrayerCategories = categories.filter((c) => c.name !== 'Prayers')
 
   async function toggleItem(item: DailyItem & { categories?: Category }) {
     if (item.status === 'done') {
@@ -73,6 +85,56 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, o
     onItemUpdate(data)
   }
 
+  async function addItem() {
+    if (!addTitle.trim() || !addCategoryId || !weekPlanId) return
+    setAdding(true)
+    try {
+      const { data: wi, error: wiError } = await supabase
+        .from('weekly_items')
+        .insert({
+          user_id: userId,
+          week_plan_id: weekPlanId,
+          category_id: addCategoryId,
+          title: addTitle.trim(),
+          priority: addPriority,
+          target_days: 1,
+        })
+        .select('*, categories(*)')
+        .single()
+      if (wiError || !wi) { toast.error('Failed to add task'); return }
+
+      const { data: di, error: diError } = await supabase
+        .from('daily_items')
+        .insert({
+          user_id: userId,
+          week_plan_id: weekPlanId,
+          weekly_item_id: wi.id,
+          category_id: addCategoryId,
+          title: addTitle.trim(),
+          scheduled_date: date,
+          status: 'pending',
+        })
+        .select('*, categories(*)')
+        .single()
+      if (diError || !di) { toast.error('Failed to add to day'); return }
+
+      onItemAdd(di, wi)
+      setAddTitle('')
+      setAddCategoryId('')
+      setAddPriority('medium')
+      setShowAddForm(false)
+      toast.success(`Added to ${dayName}!`)
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  function openAddForm() {
+    setShowAddForm(true)
+    // focus input on next tick after it mounts
+    setTimeout(() => titleInputRef.current?.focus(), 0)
+  }
+
   return (
     <div
       className={cn(
@@ -88,25 +150,36 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, o
       {/* Day header */}
       <div
         className={cn(
-          'text-center pb-2 border-b',
+          'flex items-start justify-between pb-2 border-b',
           isToday ? 'border-yellow-500/30' : 'border-slate-800'
         )}
       >
-        <p
-          className={cn(
-            'text-xs font-semibold',
-            isToday ? 'text-yellow-400' : 'text-slate-400'
-          )}
-        >
-          {dayName}
-        </p>
-        <p className={cn('text-lg font-bold', isToday ? 'text-yellow-300' : 'text-white')}>
-          {dayNum}
-        </p>
-        {items.length > 0 && (
-          <p className="text-[10px] text-slate-500">
-            {doneCount}/{items.length}
+        <div className="flex-1 text-center">
+          <p
+            className={cn(
+              'text-xs font-semibold',
+              isToday ? 'text-yellow-400' : 'text-slate-400'
+            )}
+          >
+            {dayName}
           </p>
+          <p className={cn('text-lg font-bold', isToday ? 'text-yellow-300' : 'text-white')}>
+            {dayNum}
+          </p>
+          {items.length > 0 && (
+            <p className="text-[10px] text-slate-500">
+              {doneCount}/{items.length}
+            </p>
+          )}
+        </div>
+        {weekPlanId && (
+          <button
+            onClick={openAddForm}
+            title={`Add task to ${dayName}`}
+            className="p-0.5 text-slate-600 hover:text-blue-400 hover:bg-blue-500/10 rounded transition-colors flex-shrink-0"
+          >
+            <Plus size={13} />
+          </button>
         )}
       </div>
 
@@ -164,12 +237,80 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, o
             </button>
           </div>
         ))}
-        {items.length === 0 && (
+        {items.length === 0 && !showAddForm && (
           <p className={cn('text-[10px] text-center py-3 transition-colors', isOver && draggingId ? 'text-blue-400' : 'text-slate-700')}>
             {isOver && draggingId ? 'Drop here' : '—'}
           </p>
         )}
       </div>
+
+      {/* Inline quick-add form */}
+      {showAddForm ? (
+        <div className="space-y-1.5 pt-1 border-t border-slate-800">
+          <input
+            ref={titleInputRef}
+            type="text"
+            value={addTitle}
+            onChange={(e) => setAddTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') addItem()
+              if (e.key === 'Escape') { setShowAddForm(false); setAddTitle('') }
+            }}
+            placeholder="Task title…"
+            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-white placeholder-slate-600 focus:outline-none focus:border-blue-500"
+          />
+          <select
+            value={addCategoryId}
+            onChange={(e) => setAddCategoryId(e.target.value)}
+            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-white focus:outline-none focus:border-blue-500"
+          >
+            <option value="">Category…</option>
+            {nonPrayerCategories.map((c) => (
+              <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+            ))}
+          </select>
+          <div className="flex gap-1">
+            {(['high', 'medium', 'low'] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setAddPriority(p)}
+                className={cn(
+                  'flex-1 py-0.5 rounded text-[10px] font-medium transition-colors',
+                  addPriority === p
+                    ? p === 'high' ? 'bg-red-500/30 text-red-300 border border-red-500/50'
+                      : p === 'medium' ? 'bg-yellow-500/30 text-yellow-300 border border-yellow-500/50'
+                      : 'bg-slate-600/50 text-slate-300 border border-slate-500/50'
+                    : 'bg-slate-800 text-slate-600 border border-slate-700 hover:text-slate-400'
+                )}
+              >
+                {p[0].toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            <button
+              onClick={addItem}
+              disabled={adding || !addTitle.trim() || !addCategoryId}
+              className="flex-1 flex items-center justify-center gap-1 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-lg text-[11px] font-medium transition-colors"
+            >
+              <Check size={10} /> {adding ? '…' : 'Add'}
+            </button>
+            <button
+              onClick={() => { setShowAddForm(false); setAddTitle('') }}
+              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-lg text-[11px] transition-colors"
+            >
+              <X size={10} />
+            </button>
+          </div>
+        </div>
+      ) : weekPlanId ? (
+        <button
+          onClick={openAddForm}
+          className="w-full flex items-center justify-center gap-1 py-1 text-slate-700 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg text-[10px] transition-colors border border-dashed border-slate-800 hover:border-blue-500/40"
+        >
+          <Plus size={10} /> add
+        </button>
+      ) : null}
     </div>
   )
 }

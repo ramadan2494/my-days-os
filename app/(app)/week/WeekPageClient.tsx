@@ -321,6 +321,7 @@ export default function WeekPageClient({
           dailyItems={dailyItems}
           categories={categories}
           onItemsChange={setDailyItems}
+          onItemAdd={(_, wi) => setWeeklyItems((prev) => [...prev, wi])}
         />
       )}
 
