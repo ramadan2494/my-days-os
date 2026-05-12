@@ -320,8 +320,7 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
 
     // Check: mark done and award XP
     const categoryName = (item.categories as Category)?.name ?? ''
-    const priority = item.priority
-    const xpEarned = priority === 'high' ? 25 : 15
+    const xpEarned = 15
     const { data, error } = await supabase
       .from('daily_items')
       .update({ status: 'done', xp_earned: xpEarned, completed_at: new Date().toISOString() })
