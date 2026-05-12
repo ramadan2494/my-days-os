@@ -75,6 +75,14 @@ function getLocalDateStr(d = new Date()) {
   ].join('-')
 }
 
+// Saturday of the week that contains `from` (week starts Sunday)
+function getWeekEnd(from = new Date()) {
+  const d = new Date(from)
+  const daysUntilSat = (6 - d.getDay() + 7) % 7
+  d.setDate(d.getDate() + daysUntilSat)
+  return getLocalDateStr(d)
+}
+
 export default function TodayPageClient({ userId, profile, initialItems, date }: Props) {
   const [items, setItems] = useState(initialItems)
   const [xpFloats, setXpFloats] = useState<XPFloat[]>([])
@@ -86,6 +94,7 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
 
   // Compute client-side local date (server runs UTC so it may be off by ±1 day)
   const todayStr = getLocalDateStr()
+  const weekEndStr = getWeekEnd()
   const isCurrentDay = date === todayStr
 
   // If server guessed the wrong date (UTC offset), silently re-fetch client-side — no redirect
@@ -118,14 +127,14 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
 
   const taskItems = items.filter((it) => (it.categories as Category)?.name !== 'Prayers')
 
-  // Seed today's prayers if missing — use ref to prevent StrictMode double-call
+  // Seed prayers for any day within the current week if missing
   useEffect(() => {
-    if (isCurrentDay && prayerItems.length === 0 && !seedingRef.current) {
+    if (prayerItems.length === 0 && !seedingRef.current) {
       seedingRef.current = true
       fetch('/api/prayers/seed-today', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: todayStr }),
+        body: JSON.stringify({ date }),
       })
         .then((r) => r.json())
         .then(async (data) => {
@@ -139,10 +148,10 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
             if (newItems) setItems(newItems)
           }
         })
-        .catch(() => { seedingRef.current = false })
+        .finally(() => { seedingRef.current = false })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [date])
 
   function prevDay() {
     const d = new Date(date + 'T12:00:00')
@@ -154,7 +163,7 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
     const d = new Date(date + 'T12:00:00')
     d.setDate(d.getDate() + 1)
     const next = getLocalDateStr(d)
-    if (next > todayStr) return
+    if (next > weekEndStr) return
     router.push(`/?date=${next}`)
   }
 
@@ -360,7 +369,7 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
               : formatDate(date)}
           </h1>
           <p className="text-slate-400 text-sm mt-0.5">
-            {isCurrentDay ? formatDate(date) : 'Past day view'}
+            {isCurrentDay ? formatDate(date) : date > todayStr ? 'Upcoming day' : 'Past day view'}
           </p>
         </div>
         <div className="flex items-center gap-1.5 mt-1">
@@ -377,23 +386,25 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
           >
             <ChevronLeft size={16} />
           </button>
-          {!isCurrentDay ? (
-            <>
-              <button
-                onClick={nextDay}
-                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-              >
-                <ChevronRight size={16} />
-              </button>
-              <button
-                onClick={() => router.push('/')}
-                className="text-xs text-blue-400 px-3 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 transition-colors"
-              >
-                Today
-              </button>
-            </>
-          ) : (
-            <span className="text-xs text-slate-600 px-2">Today</span>
+          <button
+            onClick={nextDay}
+            disabled={date >= weekEndStr}
+            className={cn(
+              'p-2 rounded-xl transition-colors',
+              date < weekEndStr
+                ? 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white'
+                : 'bg-slate-900 text-slate-700 cursor-not-allowed',
+            )}
+          >
+            <ChevronRight size={16} />
+          </button>
+          {date !== todayStr && (
+            <button
+              onClick={() => router.push('/')}
+              className="text-xs text-blue-400 px-3 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 transition-colors"
+            >
+              Today
+            </button>
           )}
         </div>
       </div>

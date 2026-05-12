@@ -121,22 +121,5 @@ export async function POST(request: Request) {
     new_daily_streak,
     new_prayer_streak,
     new_badges,
-  })_xp,
-    level: new_level,
-    dailyStreak: new_daily_streak,
-    prayerStreak: new_prayer_streak,
-    totalTasksDone: totalDone ?? 0,
-    tasksByCategory,
-    allPrayersDoneToday,
-  })
-
-  return NextResponse.json({
-    xp_earned,
-    new_total_xp: new_xp,
-    new_level,
-    level_up: new_level > old_level,
-    new_daily_streak,
-    new_prayer_streak,
-    new_badges,
   })
 }
