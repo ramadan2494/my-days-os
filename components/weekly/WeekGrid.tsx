@@ -47,6 +47,10 @@ export default function WeekGrid({
     ].join('-')
   })
 
+  function handleItemDelete(id: string) {
+    onItemsChange(dailyItems.filter((it) => it.id !== id))
+  }
+
   function handleItemUpdate(updated: DailyItem & { categories?: Category }) {
     onItemsChange(dailyItems.map((it) => (it.id === updated.id ? updated : it)))
   }
@@ -96,6 +100,7 @@ export default function WeekGrid({
             weekPlanId={weekPlanId}
             categories={categories}
             onItemUpdate={handleItemUpdate}
+            onItemDelete={handleItemDelete}
             onDragStart={(id) => setDraggingId(id)}
             onDragEnd={() => setDraggingId(null)}
             onDrop={handleDrop}

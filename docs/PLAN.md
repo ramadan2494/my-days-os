@@ -158,7 +158,15 @@ Navigate forward/backward through the current week from the Today view using pre
 - [x] Stats page — new “Time Tracked” section: total time this week, time-by-category horizontal bars, top 5 tasks by time
 ---
 
-## Not Now
+## Phase 13 — Bonus Tasks Polish & Week Grid Full CRUD ✅
+
+- [x] **Bonus tasks are graded separately** — Day Progress bar counts only main (non-prayer, non-bonus) tasks; bonus tasks have their own `done/total` counter inside the Bonus section
+- [x] **Delete bonus tasks** — hover any bonus row to reveal ✕ button; removes from DB and UI instantly
+- [x] **Edit bonus tasks** — hover any bonus row to reveal ✎ button; inline rename, Enter to save / Escape to cancel
+- [x] **Week grid — delete items** — hover any task chip to reveal 🗑 button; deletes the `daily_item` and its parent `weekly_item`
+- [x] **Week grid — mark as bonus when adding** — quick-add form has a "⭐ Mark as bonus" toggle; sets `is_bonus: true` on the `daily_item`; bonus items show a ⭐ icon badge in the grid
+- [x] Week grid drag & drop was already working; delete + edit + bonus marking complete the full CRUD cycle
+
 
 ### Phase 1000 — Monthly Plan View with Expandable Week Rows
 

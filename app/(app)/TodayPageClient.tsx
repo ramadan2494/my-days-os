@@ -404,8 +404,10 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
     await awardXP(item.id, categoryName, false)
   }
 
-  const doneCount = items.filter((it) => it.status !== 'pending').length
-  const totalCount = items.length
+  // Day Progress counts only main (non-prayer, non-bonus) tasks
+  const mainTaskItems = taskItems.filter((it) => !it.is_bonus)
+  const doneCount = mainTaskItems.filter((it) => it.status !== 'pending').length
+  const totalCount = mainTaskItems.length
   const xp = currentProfile?.xp ?? 0
   const level = currentProfile?.level ?? 1
 
@@ -660,6 +662,12 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
         userId={userId}
         date={date}
         onAdd={(item) => setItems((prev) => [...prev, item])}
+        onDelete={(id) => setItems((prev) => prev.filter((it) => it.id !== id))}
+        onRename={(id, newTitle) =>
+          setItems((prev) =>
+            prev.map((it) => (it.id === id ? { ...it, title: newTitle } : it)),
+          )
+        }
         activeTimerId={activeTimerId}
         timerSeconds={timerSeconds}
         onStartTimer={startTimer}
@@ -1186,6 +1194,8 @@ function BonusSection({
   userId,
   date,
   onAdd,
+  onDelete,
+  onRename,
   activeTimerId,
   timerSeconds,
   onStartTimer,
@@ -1197,6 +1207,8 @@ function BonusSection({
   userId: string
   date: string
   onAdd: (item: DailyItem & { categories?: Category }) => void
+  onDelete: (id: string) => void
+  onRename: (id: string, newTitle: string) => void
   activeTimerId: string | null
   timerSeconds: number
   onStartTimer: (id: string) => void
@@ -1211,6 +1223,9 @@ function BonusSection({
   const [categoryId, setCategoryId] = useState('')
   const [categories, setCategories] = useState<Category[]>([])
   const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const editRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     supabase
@@ -1256,12 +1271,34 @@ function BonusSection({
     }
   }
 
+  async function deleteBonus(id: string) {
+    const { error } = await supabase.from('daily_items').delete().eq('id', id)
+    if (error) { toast.error('Failed to delete'); return }
+    onDelete(id)
+    toast('🗑 Bonus task removed', { style: { background: '#1e293b', color: '#94a3b8' } })
+  }
+
+  function startEdit(item: DailyItem) {
+    setEditingId(item.id)
+    setEditTitle(item.title)
+    setTimeout(() => editRef.current?.focus(), 0)
+  }
+
+  async function saveEdit(id: string) {
+    const trimmed = editTitle.trim()
+    setEditingId(null)
+    if (!trimmed) return
+    const { error } = await supabase.from('daily_items').update({ title: trimmed }).eq('id', id)
+    if (error) { toast.error('Failed to rename'); return }
+    onRename(id, trimmed)
+  }
+
   return (
     <div className="bg-slate-900 border border-yellow-500/30 rounded-2xl overflow-hidden" style={{ borderLeftColor: '#eab308', borderLeftWidth: 3 }}>
       <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-800/60">
         <span>⭐</span>
         <span className="font-semibold text-yellow-400 text-sm">Bonus Tasks</span>
-        <span className="text-[10px] text-slate-600 ml-1 font-normal">101%</span>
+        <span className="text-[10px] text-slate-600 ml-1 font-normal">extra credit</span>
         <span className="ml-auto text-xs text-slate-500">
           {items.filter((it) => it.status === 'done').length}/{items.length}
         </span>
@@ -1284,8 +1321,9 @@ function BonusSection({
           <div
             key={item.id}
             className={cn(
-              'group/row flex items-center gap-3 p-3 bg-yellow-500/5 border border-yellow-500/10 rounded-xl transition-all',
+              'group/row flex items-center gap-2 p-3 bg-yellow-500/5 border border-yellow-500/10 rounded-xl transition-all',
               item.status === 'done' && 'opacity-55',
+              editingId === item.id && 'ring-1 ring-yellow-500/40 bg-slate-800',
             )}
           >
             <button
@@ -1299,26 +1337,60 @@ function BonusSection({
             >
               {item.status === 'done' ? <CheckCircle size={18} /> : <Circle size={18} />}
             </button>
-            {item.link && item.status !== 'done' ? (
+
+            {/* Title — inline edit or display */}
+            {editingId === item.id ? (
+              <input
+                ref={editRef}
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveEdit(item.id)
+                  if (e.key === 'Escape') setEditingId(null)
+                }}
+                onBlur={() => saveEdit(item.id)}
+                className="flex-1 bg-transparent border-none outline-none text-white text-sm min-w-0"
+              />
+            ) : item.link && item.status !== 'done' ? (
               <a
                 href={item.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex-1 text-sm text-white hover:text-blue-400 flex items-center gap-1.5 group truncate"
+                className="flex-1 text-sm text-white hover:text-blue-400 flex items-center gap-1.5 group truncate min-w-0"
               >
                 <span className="truncate">{item.title}</span>
                 <Link2 size={12} className="flex-shrink-0 text-slate-500 group-hover:text-blue-400" />
               </a>
             ) : (
-              <p className={cn('flex-1 text-sm truncate', item.status === 'done' ? 'text-slate-500 line-through' : 'text-white')}>
+              <p className={cn('flex-1 text-sm truncate min-w-0', item.status === 'done' ? 'text-slate-500 line-through' : 'text-white')}>
                 {item.title}
               </p>
             )}
-            <span className="text-[10px] text-yellow-500 font-bold flex-shrink-0">BONUS</span>
-            <BonusTimeEdit
-              item={item}
-              onEditTime={onEditTime}
-            />
+
+            <span className="text-[10px] text-yellow-500 font-bold flex-shrink-0">⭐</span>
+
+            {/* Hover actions: edit + delete */}
+            {editingId !== item.id && (
+              <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
+                <button
+                  onClick={() => startEdit(item)}
+                  title="Rename"
+                  className="p-1 rounded-lg text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
+                >
+                  <Pencil size={12} />
+                </button>
+                <button
+                  onClick={() => deleteBonus(item.id)}
+                  title="Delete bonus task"
+                  className="p-1 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+
+            <BonusTimeEdit item={item} onEditTime={onEditTime} />
             {item.status === 'done' && item.xp_earned > 0 && (
               <span className="text-xs text-yellow-400 font-medium flex-shrink-0">+{item.xp_earned} XP</span>
             )}

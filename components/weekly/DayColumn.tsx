@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { DailyItem, WeeklyItem, Category } from '@/lib/supabase/types'
 import { createClient } from '@/lib/supabase/client'
-import { CheckCircle, Circle, GripVertical, Plus, X, Check, Pencil, Link2 } from 'lucide-react'
+import { CheckCircle, Circle, GripVertical, Plus, X, Check, Pencil, Link2, Trash2, Star } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 
@@ -17,13 +17,14 @@ interface Props {
   weekPlanId: string
   categories: Category[]
   onItemUpdate: (item: DailyItem & { categories?: Category }) => void
+  onItemDelete: (id: string) => void
   onDragStart: (id: string) => void
   onDragEnd: () => void
   onDrop: (targetDate: string) => void
   onItemAdd: (dailyItem: DailyItem & { categories?: Category }, weeklyItem: WeeklyItem & { categories?: Category }) => void
 }
 
-export default function DayColumn({ date, dayName, isToday, items, draggingId, userId, weekPlanId, categories, onItemUpdate, onDragStart, onDragEnd, onDrop, onItemAdd }: Props) {
+export default function DayColumn({ date, dayName, isToday, items, draggingId, userId, weekPlanId, categories, onItemUpdate, onItemDelete, onDragStart, onDragEnd, onDrop, onItemAdd }: Props) {
   const supabase = createClient()
   const dayNum = new Date(date + 'T12:00:00').getDate()
   const doneCount = items.filter((it) => it.status === 'done').length
@@ -33,6 +34,7 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
   const [addCategoryId, setAddCategoryId] = useState('')
   const [addPriority, setAddPriority] = useState<'high' | 'medium' | 'low'>('medium')
   const [addLink, setAddLink] = useState('')
+  const [addIsBonus, setAddIsBonus] = useState(false)
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
@@ -118,6 +120,7 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
           title: addTitle.trim(),
           scheduled_date: date,
           status: 'pending',
+          is_bonus: addIsBonus,
           link: addLink.trim() || null,
         })
         .select('*, categories(*)')
@@ -129,8 +132,9 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
       setAddCategoryId('')
       setAddPriority('medium')
       setAddLink('')
+      setAddIsBonus(false)
       setShowAddForm(false)
-      toast.success(`Added to ${dayName}!`)
+      toast.success(`${addIsBonus ? '⭐ Bonus task' : 'Task'} added to ${dayName}!`)
     } finally {
       setAdding(false)
     }
@@ -164,6 +168,18 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
       await supabase.from('weekly_items').update({ title: trimmed }).eq('id', item.weekly_item_id)
     }
     onItemUpdate(data)
+  }
+
+  async function deleteItem(item: DailyItem & { categories?: Category }) {
+    // Delete the daily_item
+    await supabase.from('daily_items').delete().eq('id', item.id)
+    // Also delete the parent weekly_item and any sibling daily_items
+    if (item.weekly_item_id) {
+      await supabase.from('daily_items').delete().eq('weekly_item_id', item.weekly_item_id)
+      await supabase.from('weekly_items').delete().eq('id', item.weekly_item_id)
+    }
+    onItemDelete(item.id)
+    toast('🗑 Task removed', { style: { background: '#1e293b', color: '#94a3b8' } })
   }
 
   return (
@@ -280,6 +296,7 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
                   }
                 >
                   {item.categories?.icon} {item.title}
+                  {item.is_bonus && <Star size={8} className="inline ml-0.5 text-yellow-400" />}
                 </span>
               </button>
             )}
@@ -303,6 +320,13 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
                   className="opacity-0 group-hover/item:opacity-100 p-0.5 text-slate-600 hover:text-blue-400 flex-shrink-0 transition-all"
                 >
                   <Pencil size={9} />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); deleteItem(item) }}
+                  title="Delete"
+                  className="opacity-0 group-hover/item:opacity-100 p-0.5 text-slate-600 hover:text-red-400 flex-shrink-0 transition-all"
+                >
+                  <Trash2 size={9} />
                 </button>
               </>
             )}
@@ -365,6 +389,18 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
               </button>
             ))}
           </div>
+          {/* Bonus toggle */}
+          <button
+            onClick={() => setAddIsBonus((v) => !v)}
+            className={cn(
+              'w-full flex items-center justify-center gap-1 py-0.5 rounded text-[10px] font-medium border transition-colors',
+              addIsBonus
+                ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50'
+                : 'bg-slate-800 text-slate-600 border-slate-700 hover:text-yellow-400 hover:border-yellow-500/30',
+            )}
+          >
+            <Star size={9} /> {addIsBonus ? '⭐ Bonus' : 'Mark as bonus'}
+          </button>
           <div className="flex gap-1">
             <button
               onClick={addItem}
@@ -374,7 +410,7 @@ export default function DayColumn({ date, dayName, isToday, items, draggingId, u
               <Check size={10} /> {adding ? '…' : 'Add'}
             </button>
             <button
-              onClick={() => { setShowAddForm(false); setAddTitle('') }}
+              onClick={() => { setShowAddForm(false); setAddTitle(''); setAddIsBonus(false) }}
               className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-lg text-[11px] transition-colors"
             >
               <X size={10} />
