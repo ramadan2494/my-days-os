@@ -168,6 +168,15 @@ Navigate forward/backward through the current week from the Today view using pre
 - [x] Week grid drag & drop was already working; delete + edit + bonus marking complete the full CRUD cycle
 
 
+## Phase 14 — Settings Category Visual Pickers ✅
+
+- [x] **Icon Picker** — click the icon button on any category row (or the new-category form) to open a popover grid of 50+ predefined emojis (work, learning, family, health, finance, creative, spiritual, general); custom emoji text input at the bottom for anything not in the list
+- [x] **Color Picker** — click the color swatch to open a popover with 12 preset color swatches; native color picker always available for any custom hex color; selected swatch is highlighted/scaled
+- [x] **Live preview chip** — new-category form shows a styled badge preview (`{icon} {name}`) as you type, using the chosen color before saving
+- [x] Replaces raw `<input type="color">` and plain emoji text inputs; changes save to DB immediately on selection
+
+---
+
 ### Phase 1000 — Monthly Plan View with Expandable Week Rows
 
 Add a `/plan` page showing the current month as rows of weeks. Each week row displays a summary strip (total items, completion %, category color dots) and expands on click to reveal the existing week grid component with its `+` per-day button. AI generation works at both levels — generate a full month plan (Claude distributes items across all 4 weeks) or generate a single week inside the month. Clicking any day in the expanded grid navigates to `/today?date=YYYY-MM-DD`. All items created here use the existing `weekly_items` and `daily_items` tables — no new data model needed.
