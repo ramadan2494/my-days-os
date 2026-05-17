@@ -233,8 +233,9 @@ export default function WeekPlanCreator({
               )}
 
               <p className="text-slate-400 text-sm">
-                Describe your goals for each category. AI will create specific tasks spread across
-                the week.
+                {carried.length > 0
+                  ? 'Topics are optional — AI will generate new tasks around your carried items. Add goals for any category you want extra focus on.'
+                  : 'Describe your goals for each category. AI will create specific tasks spread across the week.'}
               </p>
               {aiCategories.map((cat) => (
                 <div key={cat.id}>

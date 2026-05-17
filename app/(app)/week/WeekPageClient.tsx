@@ -105,14 +105,17 @@ export default function WeekPageClient({
   async function openContinueMode() {
     setLoadingCarryover(true)
     try {
-      const prevWeekStart = shiftWeek(weekStart, -1)
-      // Find the previous week plan
-      const { data: prevPlan } = await supabase
+      // Find the most recent plan strictly before this week (within 3 weeks back)
+      const rangeStart = shiftWeek(weekStart, -3)
+      const { data: prevPlans } = await supabase
         .from('week_plans')
-        .select('id')
+        .select('id, week_start')
         .eq('user_id', userId)
-        .eq('week_start', prevWeekStart)
-        .single()
+        .lt('week_start', weekStart)
+        .gte('week_start', rangeStart)
+        .order('week_start', { ascending: false })
+        .limit(5)
+      const prevPlan = prevPlans?.[0] ?? null
       if (!prevPlan) {
         toast.error('No previous week plan found')
         setPlanMode('fresh')
@@ -125,9 +128,8 @@ export default function WeekPageClient({
         .select('id, title, category_id, priority, categories(*)')
         .eq('week_plan_id', prevPlan.id)
       if (!prevItems || prevItems.length === 0) {
-        // No weekly items last week — still open continue mode with empty carryover
-        setCarryoverItems([])
-        setPlanMode('continue')
+        toast('No tasks found from last week — starting fresh', { icon: '📋' })
+        setPlanMode('fresh')
         setShowCreator(true)
         return
       }
@@ -157,6 +159,12 @@ export default function WeekPageClient({
         category_name: (it.categories as Category | null)?.name ?? '',
         priority: it.priority,
       }))
+      if (carried.length === 0) {
+        toast('All last week\'s tasks were completed — great job! Starting fresh.', { icon: '🎉' })
+        setPlanMode('fresh')
+        setShowCreator(true)
+        return
+      }
       setCarryoverItems(carried)
       setPlanMode('continue')
       setShowCreator(true)

@@ -17,7 +17,22 @@ export async function POST(request: Request) {
   // User schedule: Sun-Thu = work days, Fri-Sat = vacation
   // Only "Work" (day job) is WORK — Business, PhD, Learning etc. are all FLEXIBLE
   const WORK_ONLY_CATEGORIES = ['Work']
-  const categoryMeta = (items as { category_name: string; category_id: string; topic: string; hours_per_week?: number }[])
+  const inputItems = (items ?? []) as { category_name: string; category_id: string; topic: string; hours_per_week?: number }[]
+
+  // In "continue" mode items may be empty — derive categories from carryover items so AI has valid category IDs
+  const carried = (carryoverItems ?? []) as { title: string; category_name: string; category_id: string; priority: string }[]
+  const extraCategories: typeof inputItems = []
+  if (inputItems.length === 0 && carried.length > 0) {
+    const seen = new Set<string>()
+    for (const c of carried) {
+      if (!seen.has(c.category_id)) {
+        seen.add(c.category_id)
+        extraCategories.push({ category_id: c.category_id, category_name: c.category_name, topic: 'Continue and build on previous work' })
+      }
+    }
+  }
+
+  const categoryMeta = [...inputItems, ...extraCategories]
     .map((it) => ({
       ...it,
       is_work: WORK_ONLY_CATEGORIES.some((w) => it.category_name.toLowerCase().includes(w.toLowerCase())),
@@ -35,10 +50,10 @@ USER'S WEEKLY SCHEDULE (Middle-East work week):
 Goals by category:
 ${categoryMeta
   .map((it) => `- ${it.category_name} (id: ${it.category_id}) [${it.is_work ? 'WORK' : 'FLEXIBLE'}]: ${it.topic}${it.hours_per_week ? ` (${it.hours_per_week}h/week target)` : ''}`)
-  .join('\n')}${(carryoverItems as { title: string; category_name: string; priority: string }[] | undefined)?.length ? `
+  .join('\n')}${carried.length > 0 ? `
 
 CARRIED OVER FROM LAST WEEK (incomplete tasks to continue — generate NEW tasks around these, do NOT repeat them in the output):
-${(carryoverItems as { title: string; category_name: string; priority: string }[]).map((it) => `- "${it.title}" (${it.category_name}, ${it.priority})`).join('\n')}` : ''}
+${carried.map((it) => `- "${it.title}" (${it.category_name}, ${it.priority})`).join('\n')}` : ''}
 
 Return a JSON array where each element has:
 {
