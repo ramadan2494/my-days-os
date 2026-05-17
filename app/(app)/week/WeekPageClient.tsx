@@ -75,6 +75,14 @@ export default function WeekPageClient({
   const today = new Date().toISOString().split('T')[0]
   const canEvaluate = weekStart <= today
 
+  // Compute the Sunday-start week that contains today (client-side)
+  const currentWeekStart = (() => {
+    const d = new Date()
+    d.setDate(d.getDate() - d.getDay()) // subtract day-of-week (0=Sun)
+    return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
+  })()
+  const isCurrentWeek = weekStart === currentWeekStart
+
   // Derived week end (6 days after start)
   const weekEndDate = new Date(weekStart + 'T12:00:00')
   weekEndDate.setDate(weekEndDate.getDate() + 6)
@@ -105,8 +113,8 @@ export default function WeekPageClient({
   async function openContinueMode() {
     setLoadingCarryover(true)
     try {
-      // Find the most recent plan strictly before this week (within 3 weeks back)
-      const rangeStart = shiftWeek(weekStart, -3)
+      // Find recent plans before this week (within 4 weeks back), ordered newest first
+      const rangeStart = shiftWeek(weekStart, -4)
       const { data: prevPlans } = await supabase
         .from('week_plans')
         .select('id, week_start')
@@ -114,25 +122,36 @@ export default function WeekPageClient({
         .lt('week_start', weekStart)
         .gte('week_start', rangeStart)
         .order('week_start', { ascending: false })
-        .limit(5)
-      const prevPlan = prevPlans?.[0] ?? null
-      if (!prevPlan) {
+        .limit(8)
+      if (!prevPlans || prevPlans.length === 0) {
         toast.error('No previous week plan found')
         setPlanMode('fresh')
         setShowCreator(true)
         return
       }
-      // Get weekly items from previous plan
-      const { data: prevItems } = await supabase
-        .from('weekly_items')
-        .select('id, title, category_id, priority, categories(*)')
-        .eq('week_plan_id', prevPlan.id)
-      if (!prevItems || prevItems.length === 0) {
+
+      // Scan plans newest-first; pick the first one that has weekly_items
+      let prevPlan: { id: string; week_start: string } | null = null
+      let prevItems: { id: string; title: string; category_id: string; priority: string; categories: unknown }[] | null = null
+      for (const plan of prevPlans) {
+        const { data: items } = await supabase
+          .from('weekly_items')
+          .select('id, title, category_id, priority, categories(*)')
+          .eq('week_plan_id', plan.id)
+        if (items && items.length > 0) {
+          prevPlan = plan
+          prevItems = items
+          break
+        }
+      }
+
+      if (!prevPlan || !prevItems || prevItems.length === 0) {
         toast('No tasks found from last week — starting fresh', { icon: '📋' })
         setPlanMode('fresh')
         setShowCreator(true)
         return
       }
+
       // Get daily items to determine which weekly items are fully done
       const { data: prevDaily } = await supabase
         .from('daily_items')
@@ -274,6 +293,40 @@ export default function WeekPageClient({
     distribute(combined)
   }
 
+  async function deduplicateAndRedistribute() {
+    if (!weekPlan) return
+    setDistributing(true)
+    try {
+      // Find duplicates: group by title+category_id, keep the first (oldest by created_at order)
+      const seen = new Map<string, string>() // key → id to keep
+      const toDelete: string[] = []
+      for (const item of weeklyItems) {
+        const key = `${item.title}|||${item.category_id}`
+        if (seen.has(key)) {
+          toDelete.push(item.id)
+        } else {
+          seen.set(key, item.id)
+        }
+      }
+      if (toDelete.length > 0) {
+        // Delete duplicate daily_items first, then the weekly_items
+        for (const id of toDelete) {
+          await supabase.from('daily_items').delete().eq('weekly_item_id', id)
+          await supabase.from('weekly_items').delete().eq('id', id)
+        }
+        const cleaned = weeklyItems.filter((it) => !toDelete.includes(it.id))
+        setWeeklyItems(cleaned)
+        toast.success(`Removed ${toDelete.length} duplicate${toDelete.length > 1 ? 's' : ''} — redistributing…`)
+        await distribute(cleaned)
+      } else {
+        toast('No duplicates found — redistributing…', { icon: '✓' })
+        await distribute()
+      }
+    } finally {
+      setDistributing(false)
+    }
+  }
+
   function handleReviewGenerateNewPlan(hint: string) {
     setShowReview(false)
     handleOpenPlanCreator(hint)
@@ -304,6 +357,15 @@ export default function WeekPageClient({
             >
               <ChevronRight size={18} />
             </button>
+            {!isCurrentWeek && (
+              <button
+                onClick={() => router.push('/week')}
+                className="ml-1 px-2.5 py-1 text-xs font-medium bg-blue-600/20 hover:bg-blue-600/40 border border-blue-500/30 text-blue-400 rounded-lg transition-colors"
+                title="Jump to current week"
+              >
+                Today
+              </button>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -371,20 +433,29 @@ export default function WeekPageClient({
             )}
           </div>
 
-          {weeklyItems.length > 0 && dailyItems.length === 0 && (
+          {weeklyItems.length > 0 && (
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-center justify-between gap-4">
               <div>
-                <p className="text-amber-300 font-medium text-sm">Ready to distribute to days?</p>
-                <p className="text-amber-400/70 text-xs mt-0.5">
-                  AI will assign items to specific days based on target_days
-                </p>
+                {weeklyItems.length !== new Set(weeklyItems.map((i) => `${i.title}|||${i.category_id}`)).size ? (
+                  <>
+                    <p className="text-amber-300 font-medium text-sm">Duplicates detected!</p>
+                    <p className="text-amber-400/70 text-xs mt-0.5">
+                      {weeklyItems.length - new Set(weeklyItems.map((i) => `${i.title}|||${i.category_id}`)).size} duplicate{weeklyItems.length - new Set(weeklyItems.map((i) => `${i.title}|||${i.category_id}`)).size > 1 ? 's' : ''} will be removed before distributing
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-amber-300 font-medium text-sm">{dailyItems.length > 0 ? 'Re-distribute to days?' : 'Ready to distribute to days?'}</p>
+                    <p className="text-amber-400/70 text-xs mt-0.5">AI assigns each item to specific days based on your schedule</p>
+                  </>
+                )}
               </div>
               <button
-                onClick={distribute}
+                onClick={deduplicateAndRedistribute}
                 disabled={distributing}
                 className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-sm font-semibold rounded-xl disabled:opacity-50 whitespace-nowrap transition-colors"
               >
-                {distributing ? 'Working…' : 'Distribute'}
+                {distributing ? 'Working…' : weeklyItems.length !== new Set(weeklyItems.map((i) => `${i.title}|||${i.category_id}`)).size ? 'Clean & Distribute' : dailyItems.length > 0 ? 'Re-distribute' : 'Distribute'}
               </button>
             </div>
           )}

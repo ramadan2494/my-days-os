@@ -30,14 +30,29 @@ export async function POST(request: Request) {
   // User schedule: Sun-Thu = work days, Fri-Sat = vacation/weekend
   // Only the "Work" day-job category is WORK; Business/PhD/Learning/Soft Skill are all FLEXIBLE
   const WORK_ONLY_CATEGORIES = ['work']
-  const itemsWithType = weekly_items.map((it) => ({
-    ...it,
-    type: WORK_ONLY_CATEGORIES.some((w) => (it.category_name ?? '').toLowerCase().includes(w)) ? 'WORK' : 'FLEXIBLE',
-  }))
 
-  // day_index: 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday
-  // weekStart is always a Sunday; scheduled_date = weekStart + day_index days
-  const prompt = `Distribute these weekly items across Sunday to Saturday (day_index 0-6).
+  try {
+    // 1. Find weekly_items that are already DONE — skip re-distributing them
+    const { data: doneDaily } = await supabase
+      .from('daily_items')
+      .select('weekly_item_id')
+      .eq('week_plan_id', week_plan_id)
+      .eq('status', 'done')
+    const doneItemIds = new Set((doneDaily ?? []).map((d) => d.weekly_item_id))
+
+    // 2. Only distribute items that are NOT already done
+    const itemsToDistribute = weekly_items.filter((it) => !doneItemIds.has(it.id))
+    if (itemsToDistribute.length === 0) {
+      return NextResponse.json({ created: 0 })
+    }
+
+    const itemsWithType = itemsToDistribute.map((it) => ({
+      ...it,
+      type: WORK_ONLY_CATEGORIES.some((w) => (it.category_name ?? '').toLowerCase().includes(w)) ? 'WORK' : 'FLEXIBLE',
+    }))
+
+    // day_index: 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday
+    const prompt = `Distribute these weekly items across Sunday to Saturday (day_index 0-6).
 Each item has target_days — assign to exactly that many DIFFERENT days.
 
 USER'S SCHEDULE (Middle-East work week, Sun-Thu):
@@ -64,7 +79,6 @@ CRITICAL RULES:
 6. Spread categories across multiple days — no clustering.
 7. Balance load evenly across all 7 days.`
 
-  try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -74,7 +88,7 @@ CRITICAL RULES:
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5',
-        max_tokens: 2000,
+        max_tokens: 4096,
         messages: [{ role: 'user', content: prompt }],
       }),
     })
@@ -89,26 +103,35 @@ CRITICAL RULES:
     const assignments: Array<{ weekly_item_id: string; day_index: number }> =
       JSON.parse(jsonMatch[0])
 
-    const itemMap = Object.fromEntries(weekly_items.map((it) => [it.id, it]))
-    const weekStartDate = new Date(week_start)
+    const itemMap = Object.fromEntries(itemsToDistribute.map((it) => [it.id, it]))
+    const weekStartDate = new Date(week_start + 'T12:00:00')
 
-    const dailyItemRows = assignments.map((a) => {
-      const item = itemMap[a.weekly_item_id]
-      const date = new Date(weekStartDate)
-      date.setDate(date.getDate() + (a.day_index ?? 0))
-      return {
-        user_id: user.id,
-        week_plan_id,
-        weekly_item_id: a.weekly_item_id,
-        category_id: item.category_id,
-        title: item.title,
-        scheduled_date: date.toISOString().split('T')[0],
-        status: 'pending',
-      }
-    })
+    // 3. Build new rows — only for undone items (guard against AI returning done item ids)
+    const dailyItemRows = assignments
+      .filter((a) => itemMap[a.weekly_item_id] && !doneItemIds.has(a.weekly_item_id))
+      .map((a) => {
+        const item = itemMap[a.weekly_item_id]
+        const date = new Date(weekStartDate)
+        date.setDate(date.getDate() + (a.day_index ?? 0))
+        return {
+          user_id: user.id,
+          week_plan_id,
+          weekly_item_id: a.weekly_item_id,
+          category_id: item.category_id,
+          title: item.title,
+          scheduled_date: date.toISOString().split('T')[0],
+          status: 'pending',
+        }
+      })
 
-    const { error } = await supabase.from('daily_items').insert(dailyItemRows)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    // 4. Delete only PENDING items (done items stay untouched)
+    await supabase.from('daily_items').delete().eq('week_plan_id', week_plan_id).eq('status', 'pending')
+
+    // 5. Insert the new pending assignments
+    if (dailyItemRows.length > 0) {
+      const { error } = await supabase.from('daily_items').insert(dailyItemRows)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    }
 
     return NextResponse.json({ created: dailyItemRows.length })
   } catch {

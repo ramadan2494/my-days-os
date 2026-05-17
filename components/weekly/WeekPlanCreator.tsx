@@ -95,27 +95,44 @@ export default function WeekPlanCreator({
     if (!preview || !weekPlan) return
     setLoading(true)
     try {
-      const newRows = preview.map((t) => ({
-        user_id: userId,
-        week_plan_id: weekPlan.id,
-        category_id: t.category_id,
-        title: t.title,
-        description: t.description ?? null,
-        target_days: 1,
-        priority: t.priority ?? 'medium',
-      }))
-      const carriedRows = carried.map((c) => ({
-        user_id: userId,
-        week_plan_id: weekPlan.id,
-        category_id: c.category_id,
-        title: c.title,
-        description: null,
-        target_days: 1,
-        priority: c.priority,
-      }))
+      // Fetch existing weekly_items to avoid duplicates
+      const { data: existing } = await supabase
+        .from('weekly_items')
+        .select('title, category_id')
+        .eq('week_plan_id', weekPlan.id)
+      const existingKeys = new Set((existing ?? []).map((e) => `${e.title}|||${e.category_id}`))
+
+      const newRows = preview
+        .filter((t) => !existingKeys.has(`${t.title}|||${t.category_id}`))
+        .map((t) => ({
+          user_id: userId,
+          week_plan_id: weekPlan.id,
+          category_id: t.category_id,
+          title: t.title,
+          description: t.description ?? null,
+          target_days: 1,
+          priority: t.priority ?? 'medium',
+        }))
+      const carriedRows = carried
+        .filter((c) => !existingKeys.has(`${c.title}|||${c.category_id}`))
+        .map((c) => ({
+          user_id: userId,
+          week_plan_id: weekPlan.id,
+          category_id: c.category_id,
+          title: c.title,
+          description: null,
+          target_days: 1,
+          priority: c.priority,
+        }))
+      const toInsert = [...carriedRows, ...newRows]
+      if (toInsert.length === 0) {
+        toast('All items already exist in this week\'s plan', { icon: 'ℹ️' })
+        onClose()
+        return
+      }
       const { data, error } = await supabase
         .from('weekly_items')
-        .insert([...carriedRows, ...newRows])
+        .insert(toInsert)
         .select('*, categories(*)')
       if (error) {
         toast.error(error.message)
