@@ -210,8 +210,9 @@ export default function WeekPageClient({
     setDailyItems((prev) => prev.filter((it) => it.weekly_item_id !== id))
   }
 
-  async function distribute() {
-    if (!weekPlan || weeklyItems.length === 0) return
+  async function distribute(overrideItems?: typeof weeklyItems) {
+    const itemsToDistribute = overrideItems ?? weeklyItems
+    if (!weekPlan || itemsToDistribute.length === 0) return
     setDistributing(true)
     try {
       const res = await fetch('/api/distribute-week', {
@@ -219,7 +220,7 @@ export default function WeekPageClient({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           week_plan_id: weekPlan.id,
-          weekly_items: weeklyItems.map((it) => ({
+          weekly_items: itemsToDistribute.map((it) => ({
             id: it.id,
             title: it.title,
             category_id: it.category_id,
@@ -265,9 +266,12 @@ export default function WeekPageClient({
   }
 
   function onAIItemsCreated(newItems: (WeeklyItem & { categories?: Category })[]) {
-    setWeeklyItems((prev) => [...prev, ...newItems])
+    const combined = [...weeklyItems, ...newItems]
+    setWeeklyItems(combined)
     setShowCreator(false)
-    toast.success(`${newItems.length} items added to plan!`)
+    toast.success(`${newItems.length} items added — distributing to days…`)
+    // Auto-distribute with the full combined list (state hasn't re-rendered yet)
+    distribute(combined)
   }
 
   function handleReviewGenerateNewPlan(hint: string) {

@@ -35,12 +35,14 @@ export async function POST(request: Request) {
     type: WORK_ONLY_CATEGORIES.some((w) => (it.category_name ?? '').toLowerCase().includes(w)) ? 'WORK' : 'FLEXIBLE',
   }))
 
-  const prompt = `Distribute these weekly items across Monday to Sunday (day_index 0-6).
+  // day_index: 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday
+  // weekStart is always a Sunday; scheduled_date = weekStart + day_index days
+  const prompt = `Distribute these weekly items across Sunday to Saturday (day_index 0-6).
 Each item has target_days — assign to exactly that many DIFFERENT days.
 
 USER'S SCHEDULE (Middle-East work week, Sun-Thu):
-- Sunday(6), Monday(0), Tuesday(1), Wednesday(2), Thursday(3): WORK DAYS — job commitments
-- Friday(4) and Saturday(5): WEEKEND — free for Learning, PhD, Family, Book
+- Sunday(0), Monday(1), Tuesday(2), Wednesday(3), Thursday(4): WORK DAYS — job commitments
+- Friday(5) and Saturday(6): WEEKEND — free for Learning, PhD, Family, Book
 
 Return ONLY a JSON array: [{"weekly_item_id": "uuid", "day_index": 0}]
 For items with target_days > 1, include multiple entries for the same item with different day_index values.
@@ -54,11 +56,11 @@ ${itemsWithType
   .join('\n')}
 
 CRITICAL RULES:
-1. [WORK] items (Work day-job only) → ONLY on work days: Sun(6), Mon(0), Tue(1), Wed(2), Thu(3). NEVER on Fri(4) or Sat(5).
+1. [WORK] items (Work day-job only) → ONLY on work days: Sun(0), Mon(1), Tue(2), Wed(3), Thu(4). NEVER on Fri(5) or Sat(6).
 2. Business, PhD, Learning, Book, Soft Skill are FLEXIBLE → spread across work days AND Fri-Sat. Prioritize Friday and Saturday for deep sessions.
-3. Family items → any day, especially Fri(4), Sat(5).
+3. Family items → any day, especially Fri(5), Sat(6).
 4. Each work day (Sun-Thu): 1 Work task + 1-2 FLEXIBLE tasks, aim for 2-3 tasks total, never more than 4.
-5. Friday(4) and Saturday(5): FLEXIBLE only — Business/PhD/Learning/Book/Soft Skill/Family, 2-3 tasks each day.
+5. Friday(5) and Saturday(6): FLEXIBLE only — Business/PhD/Learning/Book/Soft Skill/Family, 2-3 tasks each day.
 6. Spread categories across multiple days — no clustering.
 7. Balance load evenly across all 7 days.`
 

@@ -3,10 +3,6 @@ import { redirect } from 'next/navigation'
 import WeekPageClient from './WeekPageClient'
 import { getWeekStart } from '@/lib/week'
 
-function fmtDate(d: Date) {
-  return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
-}
-
 export default async function WeekPage({
   searchParams,
 }: {
@@ -19,39 +15,42 @@ export default async function WeekPage({
   } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Load profile to get week_start_day preference
+  // Load profile for name; week always starts on Sunday (0) to match the Sun-first grid
   const { data: profile } = await supabase.from('profiles').select('week_start_day, full_name').eq('id', user.id).single()
-  const weekStartDay: number = profile?.week_start_day ?? 0
 
-  // If client passed ?ws=YYYY-MM-DD use it; otherwise compute from profile setting
-  const weekStart = (ws && /^\d{4}-\d{2}-\d{2}$/.test(ws)) ? ws : getWeekStart(new Date(), weekStartDay)
+  // Normalize weekStart to the containing Sunday (handles stale ?ws Monday-based URLs too)
+  const weekStart = getWeekStart(
+    ws && /^\d{4}-\d{2}-\d{2}$/.test(ws) ? new Date(ws + 'T12:00:00') : new Date(),
+    0
+  )
 
-  // Search ±7 days. Among all matching plans pick the one with actual items (real data plan).
-  const lo = new Date(weekStart + 'T12:00:00'); lo.setDate(lo.getDate() - 7)
-  const hi = new Date(weekStart + 'T12:00:00'); hi.setDate(hi.getDate() + 7)
-
-  const { data: allPlans } = await supabase
+  // Exact match on Sunday weekStart
+  const { data: exactPlan } = await supabase
     .from('week_plans')
     .select('*')
     .eq('user_id', user.id)
-    .gte('week_start', fmtDate(lo))
-    .lte('week_start', fmtDate(hi))
-    .order('week_start', { ascending: false })
+    .eq('week_start', weekStart)
+    .maybeSingle()
 
-  let weekPlan = null
+  let weekPlan = exactPlan ?? null
 
-  if (allPlans && allPlans.length > 0) {
-    for (const plan of allPlans) {
-      const { count } = await supabase
-        .from('weekly_items')
-        .select('*', { count: 'exact', head: true })
-        .eq('week_plan_id', plan.id)
-      if ((count ?? 0) > 0) {
-        weekPlan = plan
-        break
-      }
+  // Legacy fallback: old plans were stored with Monday start (profile week_start_day=1).
+  // Try weekStart+1 (Monday) and silently migrate to Sunday start.
+  if (!weekPlan) {
+    const legacy = new Date(weekStart + 'T12:00:00')
+    legacy.setDate(legacy.getDate() + 1)
+    const legacyStart = [legacy.getFullYear(), String(legacy.getMonth() + 1).padStart(2, '0'), String(legacy.getDate()).padStart(2, '0')].join('-')
+    const { data: legacyPlan } = await supabase
+      .from('week_plans')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('week_start', legacyStart)
+      .maybeSingle()
+    if (legacyPlan) {
+      // Migrate: update week_start to Sunday so future loads use exact match
+      await supabase.from('week_plans').update({ week_start: weekStart }).eq('id', legacyPlan.id)
+      weekPlan = { ...legacyPlan, week_start: weekStart }
     }
-    if (!weekPlan) weekPlan = allPlans[0]
   }
 
   if (!weekPlan) {

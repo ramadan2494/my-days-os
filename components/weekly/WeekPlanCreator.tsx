@@ -286,7 +286,7 @@ export default function WeekPlanCreator({
           {tab === 'ai' && preview && (
             <>
               <div className="flex items-center justify-between">
-                <p className="text-white font-medium">{preview.length} tasks generated</p>
+                <p className="text-white font-medium">{preview.length + carried.length} total items to add</p>
                 <button
                   onClick={() => setPreview(null)}
                   className="text-xs text-slate-400 hover:text-white"
@@ -294,7 +294,39 @@ export default function WeekPlanCreator({
                   ← Edit topics
                 </button>
               </div>
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {/* Carried items shown first */}
+                {carried.length > 0 && (
+                  <>
+                    <p className="text-xs font-semibold text-amber-400 uppercase tracking-widest px-1">
+                      Carried from last week ({carried.length})
+                    </p>
+                    {carried.map((item) => {
+                      const cat = categories.find((c) => c.id === item.category_id)
+                      return (
+                        <div key={item.id} className="flex items-center gap-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                          <span className="text-base">{cat?.icon ?? '📌'}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-white truncate">{item.title}</p>
+                            <p className="text-xs text-slate-500">{item.category_name} · {item.priority}</p>
+                          </div>
+                          <button
+                            onClick={() => setCarried((prev) => prev.filter((c) => c.id !== item.id))}
+                            className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                    {preview.length > 0 && (
+                      <p className="text-xs font-semibold text-purple-400 uppercase tracking-widest px-1 pt-1">
+                        New AI tasks ({preview.length})
+                      </p>
+                    )}
+                  </>
+                )}
+                {/* AI-generated tasks */}
                 {preview.map((task, i) => {
                   const cat = categories.find((c) => c.id === task.category_id)
                   return (
@@ -320,10 +352,10 @@ export default function WeekPlanCreator({
               </div>
               <button
                 onClick={confirmAI}
-                disabled={loading || preview.length === 0}
+                disabled={loading || (preview.length === 0 && carried.length === 0)}
                 className="w-full py-3 bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-xl text-white font-semibold transition-colors"
               >
-                {loading ? 'Saving…' : `Add ${preview.length} Items to Plan`}
+                {loading ? 'Saving…' : `Add ${preview.length + carried.length} Items to Plan`}
               </button>
             </>
           )}
