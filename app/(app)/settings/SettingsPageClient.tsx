@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { Profile, Category } from '@/lib/supabase/types'
-import { Settings, MapPin, Bell, Briefcase, User, Save, Tag, Plus, Trash2 } from 'lucide-react'
+import { Settings, MapPin, Bell, Briefcase, User, Save, Tag, Plus, Trash2, CalendarDays } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
 import { createClient } from '@/lib/supabase/client'
@@ -58,6 +58,7 @@ export default function SettingsPageClient({ userId, profile, email, initialCate
     prayer_notification_offset: profile?.notification_offset_minutes ?? profile?.prayer_notification_offset ?? 10,
     work_start_hour: profile?.work_start_hour ?? 9,
     work_hours: profile?.work_hours_per_day ?? profile?.work_hours ?? 8,
+    week_start_day: profile?.week_start_day ?? 0,
   })
   const [saving, setSaving] = useState(false)
   const [geoLoading, setGeoLoading] = useState(false)
@@ -77,6 +78,7 @@ export default function SettingsPageClient({ userId, profile, email, initialCate
         prayer_notification_offset: form.prayer_notification_offset,
         work_start_hour: form.work_start_hour,
         work_hours: form.work_hours,
+        week_start_day: form.week_start_day,
       }),
     })
     setSaving(false)
@@ -216,6 +218,27 @@ export default function SettingsPageClient({ userId, profile, email, initialCate
               onChange={e => setForm(f => ({ ...f, work_hours: Number(e.target.value) }))}
               className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500" />
           </div>
+        </div>
+      </Section>
+
+      {/* Week */}
+      <Section icon={CalendarDays} title="Week Settings">
+        <div>
+          <label className="text-xs text-slate-400 mb-1 block">Week starts on</label>
+          <select
+            value={form.week_start_day}
+            onChange={e => setForm(f => ({ ...f, week_start_day: Number(e.target.value) }))}
+            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500"
+          >
+            <option value={0}>Sunday</option>
+            <option value={1}>Monday</option>
+            <option value={2}>Tuesday</option>
+            <option value={3}>Wednesday</option>
+            <option value={4}>Thursday</option>
+            <option value={5}>Friday</option>
+            <option value={6}>Saturday</option>
+          </select>
+          <p className="text-[11px] text-slate-500 mt-1.5">Affects the Week Grid, Today navigation, and Stats date ranges.</p>
         </div>
       </Section>
 

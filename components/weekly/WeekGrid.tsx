@@ -16,8 +16,6 @@ interface Props {
   onItemAdd?: (dailyItem: DailyItem & { categories?: Category }, weeklyItem: WeeklyItem & { categories?: Category }) => void
 }
 
-const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-
 export default function WeekGrid({
   userId,
   weekPlanId,
@@ -37,6 +35,7 @@ export default function WeekGrid({
     String(now.getDate()).padStart(2, '0'),
   ].join('-')
 
+  const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(weekStart + 'T12:00:00')
     d.setDate(d.getDate() + i)

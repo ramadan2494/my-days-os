@@ -1,18 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import WeekPageClient from './WeekPageClient'
-
-function getWeekStart(date = new Date()): string {
-  const d = new Date(date)
-  const day = d.getDay()
-  const diff = day === 0 ? -6 : 1 - day
-  d.setDate(d.getDate() + diff)
-  return [
-    d.getFullYear(),
-    String(d.getMonth() + 1).padStart(2, '0'),
-    String(d.getDate()).padStart(2, '0'),
-  ].join('-')
-}
+import { getWeekStart } from '@/lib/week'
 
 function fmtDate(d: Date) {
   return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
@@ -30,8 +19,12 @@ export default async function WeekPage({
   } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // If client passed ?ws=YYYY-MM-DD use it; otherwise fall back to server UTC guess
-  const weekStart = (ws && /^\d{4}-\d{2}-\d{2}$/.test(ws)) ? ws : getWeekStart()
+  // Load profile to get week_start_day preference
+  const { data: profile } = await supabase.from('profiles').select('week_start_day, full_name').eq('id', user.id).single()
+  const weekStartDay: number = profile?.week_start_day ?? 0
+
+  // If client passed ?ws=YYYY-MM-DD use it; otherwise compute from profile setting
+  const weekStart = (ws && /^\d{4}-\d{2}-\d{2}$/.test(ws)) ? ws : getWeekStart(new Date(), weekStartDay)
 
   // Search ±7 days. Among all matching plans pick the one with actual items (real data plan).
   const lo = new Date(weekStart + 'T12:00:00'); lo.setDate(lo.getDate() - 7)
@@ -92,6 +85,7 @@ export default async function WeekPage({
       categories={categoriesRes.data ?? []}
       weeklyItems={weeklyItemsRes.data ?? []}
       dailyItems={dailyItemsRes.data ?? []}
+      profileName={profile?.full_name ?? ''}
     />
   )
 }

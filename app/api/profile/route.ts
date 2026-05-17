@@ -17,6 +17,7 @@ export async function POST(request: Request) {
     prayer_notification_offset: body.prayer_notification_offset,
     work_start_hour: body.work_start_hour,
     work_hours: body.work_hours,
+    week_start_day: body.week_start_day ?? 0,
     updated_at: new Date().toISOString(),
   }).eq('id', user.id)
 

@@ -12,7 +12,7 @@ export async function POST(request: Request) {
   if (!apiKey)
     return NextResponse.json({ error: 'Claude API key not configured' }, { status: 500 })
 
-  const { week_start, items } = await request.json()
+  const { week_start, items, focusHint, carryoverItems } = await request.json()
 
   // User schedule: Sun-Thu = work days, Fri-Sat = vacation
   // Only "Work" (day job) is WORK — Business, PhD, Learning etc. are all FLEXIBLE
@@ -35,7 +35,10 @@ USER'S WEEKLY SCHEDULE (Middle-East work week):
 Goals by category:
 ${categoryMeta
   .map((it) => `- ${it.category_name} (id: ${it.category_id}) [${it.is_work ? 'WORK' : 'FLEXIBLE'}]: ${it.topic}${it.hours_per_week ? ` (${it.hours_per_week}h/week target)` : ''}`)
-  .join('\n')}
+  .join('\n')}${(carryoverItems as { title: string; category_name: string; priority: string }[] | undefined)?.length ? `
+
+CARRIED OVER FROM LAST WEEK (incomplete tasks to continue — generate NEW tasks around these, do NOT repeat them in the output):
+${(carryoverItems as { title: string; category_name: string; priority: string }[]).map((it) => `- "${it.title}" (${it.category_name}, ${it.priority})`).join('\n')}` : ''}
 
 Return a JSON array where each element has:
 {
@@ -57,7 +60,7 @@ CRITICAL RULES — follow exactly:
 5. Friday(4) and Saturday(5): FLEXIBLE only — Business/PhD/Learning/Book/Soft Skill/Family, 2-3 tasks each day. No Work.
 6. Spread each category across MULTIPLE days — never cluster all PhD on one day.
 7. Be specific and actionable in titles.
-8. Match each task's category_id exactly from the input.`
+8. Match each task's category_id exactly from the input.${focusHint ? `\n9. IMPORTANT: The user wants to focus more on: "${focusHint}". Prioritise these areas and assign them more tasks, especially high-priority ones.` : ''}\``
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {

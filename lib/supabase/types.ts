@@ -25,6 +25,7 @@ export interface Profile {
   work_start_hour: number
   work_hours: number
   work_hours_per_day: number
+  week_start_day: number
   xp: number
   level: number
   daily_streak: number
@@ -268,11 +269,19 @@ export interface Category {
 export type DailyItemStatus = 'pending' | 'done' | 'skipped'
 export type WeeklyItemPriority = 'high' | 'medium' | 'low'
 
+export interface WeekReviewCache {
+  summary: string
+  focusAreas: string[]
+  motivation: string
+}
+
 export interface WeekPlan {
   id: string
   user_id: string
   week_start: string
   title: string | null
+  review_cache: WeekReviewCache | null
+  review_cached_at: string | null
   created_at: string
 }
 

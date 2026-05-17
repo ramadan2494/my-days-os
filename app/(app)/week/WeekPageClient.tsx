@@ -1,13 +1,15 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { WeekPlan, WeeklyItem, DailyItem, Category } from '@/lib/supabase/types'
 import { createClient } from '@/lib/supabase/client'
-import { Plus, Grid3X3, List, Trash2, Sparkles, RotateCcw } from 'lucide-react'
+import { Plus, Grid3X3, List, Trash2, Sparkles, RotateCcw, BarChart2, ChevronLeft, ChevronRight, RefreshCw, Copy } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { cn } from '@/lib/utils'
 import WeekGrid from '@/components/weekly/WeekGrid'
 import WeekPlanCreator from '@/components/weekly/WeekPlanCreator'
+import WeekReviewPanel from '@/components/weekly/WeekReviewPanel'
 
 interface Props {
   userId: string
@@ -16,12 +18,27 @@ interface Props {
   categories: Category[]
   weeklyItems: (WeeklyItem & { categories?: Category })[]
   dailyItems: (DailyItem & { categories?: Category })[]
+  profileName?: string
+}
+
+export interface CarryoverItem {
+  id: string
+  title: string
+  category_id: string
+  category_name: string
+  priority: string
 }
 
 const PRIORITY_COLORS: Record<string, string> = {
   high: 'bg-red-500/20 text-red-300 border border-red-500/30',
   medium: 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30',
   low: 'bg-slate-500/20 text-slate-400 border border-slate-500/30',
+}
+
+function shiftWeek(weekStart: string, delta: number): string {
+  const d = new Date(weekStart + 'T12:00:00')
+  d.setDate(d.getDate() + delta * 7)
+  return d.toISOString().split('T')[0]
 }
 
 export default function WeekPageClient({
@@ -31,12 +48,19 @@ export default function WeekPageClient({
   categories,
   weeklyItems: init,
   dailyItems: initDaily,
+  profileName = '',
 }: Props) {
+  const router = useRouter()
   const [tab, setTab] = useState<'plan' | 'grid'>('plan')
   const [weeklyItems, setWeeklyItems] = useState(init)
   const [dailyItems, setDailyItems] = useState(initDaily)
   const [showCreator, setShowCreator] = useState(false)
+  const [planMode, setPlanMode] = useState<'fresh' | 'continue' | null>(null)
+  const [carryoverItems, setCarryoverItems] = useState<CarryoverItem[]>([])
+  const [loadingCarryover, setLoadingCarryover] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
+  const [showReview, setShowReview] = useState(false)
+  const [reviewFocusHint, setReviewFocusHint] = useState('')
   const [distributing, setDistributing] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [form, setForm] = useState({
@@ -47,8 +71,16 @@ export default function WeekPageClient({
   })
   const supabase = createClient()
 
+  // Week is "evaluatable" once at least one day in the week has passed
+  const today = new Date().toISOString().split('T')[0]
+  const canEvaluate = weekStart <= today
+
+  // Derived week end (6 days after start)
+  const weekEndDate = new Date(weekStart + 'T12:00:00')
+  weekEndDate.setDate(weekEndDate.getDate() + 6)
+  const weekEnd = weekEndDate.toISOString().split('T')[0]
   const weekDays = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart)
+    const d = new Date(weekStart + 'T12:00:00')
     d.setDate(d.getDate() + i)
     return d
   })
@@ -65,6 +97,79 @@ export default function WeekPageClient({
     acc[cat.id] = weeklyItems.filter((it) => it.category_id === cat.id)
     return acc
   }, {})
+
+  function navigateWeek(delta: number) {
+    router.push(`/week?ws=${shiftWeek(weekStart, delta)}`)
+  }
+
+  async function openContinueMode() {
+    setLoadingCarryover(true)
+    try {
+      const prevWeekStart = shiftWeek(weekStart, -1)
+      // Find the previous week plan
+      const { data: prevPlan } = await supabase
+        .from('week_plans')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('week_start', prevWeekStart)
+        .single()
+      if (!prevPlan) {
+        toast.error('No previous week plan found')
+        setPlanMode('fresh')
+        setShowCreator(true)
+        return
+      }
+      // Get weekly items from previous plan
+      const { data: prevItems } = await supabase
+        .from('weekly_items')
+        .select('id, title, category_id, priority, categories(*)')
+        .eq('week_plan_id', prevPlan.id)
+      if (!prevItems || prevItems.length === 0) {
+        // No weekly items last week — still open continue mode with empty carryover
+        setCarryoverItems([])
+        setPlanMode('continue')
+        setShowCreator(true)
+        return
+      }
+      // Get daily items to determine which weekly items are fully done
+      const { data: prevDaily } = await supabase
+        .from('daily_items')
+        .select('weekly_item_id, status')
+        .eq('week_plan_id', prevPlan.id)
+      const doneItemIds = new Set(
+        (prevDaily ?? [])
+          .filter((d) => d.status === 'done')
+          .map((d) => d.weekly_item_id)
+      )
+      // Only carry items that have at least one undone daily occurrence (or no daily items at all)
+      const incomplete = prevItems.filter((it) => {
+        const hasDailyItems = (prevDaily ?? []).some((d) => d.weekly_item_id === it.id)
+        if (!hasDailyItems) return true // never distributed → carry over
+        const allDone = (prevDaily ?? [])
+          .filter((d) => d.weekly_item_id === it.id)
+          .every((d) => d.status === 'done')
+        return !allDone
+      })
+      const carried: CarryoverItem[] = incomplete.map((it) => ({
+        id: it.id,
+        title: it.title,
+        category_id: it.category_id,
+        category_name: (it.categories as Category | null)?.name ?? '',
+        priority: it.priority,
+      }))
+      setCarryoverItems(carried)
+      setPlanMode('continue')
+      setShowCreator(true)
+    } finally {
+      setLoadingCarryover(false)
+    }
+  }
+
+  function handleOpenPlanCreator(hint?: string) {
+    if (hint !== undefined) setReviewFocusHint(hint)
+    setPlanMode(null) // show mode selector
+    setShowCreator(true)
+  }
 
   async function addItem() {
     if (!form.title.trim() || !form.category_id || !weekPlan) return
@@ -157,13 +262,37 @@ export default function WeekPageClient({
     toast.success(`${newItems.length} items added to plan!`)
   }
 
+  function handleReviewGenerateNewPlan(hint: string) {
+    setShowReview(false)
+    handleOpenPlanCreator(hint)
+  }
+
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Week Plan</h1>
-          <p className="text-slate-400 text-sm mt-0.5">{weekLabel}</p>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          {/* Week navigation */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => navigateWeek(-1)}
+              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+              title="Previous week"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold text-white">Week Plan</h1>
+              <p className="text-slate-400 text-xs mt-0.5">{weekLabel}</p>
+            </div>
+            <button
+              onClick={() => navigateWeek(1)}
+              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+              title="Next week"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {(weeklyItems.length > 0 || dailyItems.length > 0) && (
@@ -174,11 +303,20 @@ export default function WeekPageClient({
               className="flex items-center gap-1.5 px-3 py-2 bg-red-900/40 hover:bg-red-800/60 border border-red-800/50 text-red-400 text-sm font-medium rounded-xl disabled:opacity-50 transition-colors"
             >
               <RotateCcw size={14} />
-              {clearing ? 'Clearing…' : 'New Plan'}
+              {clearing ? 'Clearing…' : 'Clear'}
+            </button>
+          )}
+          {canEvaluate && dailyItems.length > 0 && (
+            <button
+              onClick={() => setShowReview(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-xl transition-colors"
+            >
+              <BarChart2 size={14} />
+              Evaluate
             </button>
           )}
           <button
-            onClick={() => setShowCreator(true)}
+            onClick={() => handleOpenPlanCreator()}
             className="flex items-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-xl transition-colors"
           >
             <Sparkles size={14} />
@@ -417,14 +555,66 @@ export default function WeekPageClient({
         </div>
       )}
 
-      {/* AI creator modal */}
-      {showCreator && (
+      {/* AI creator modal — mode selector first, then creator */}
+      {showCreator && planMode === null && (
+        <div
+          className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowCreator(false)}
+        >
+          <div
+            className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold text-white">Plan next week</h2>
+            <p className="text-slate-400 text-sm">How do you want to start?</p>
+            <button
+              onClick={() => { setPlanMode('fresh'); }}
+              className="w-full flex items-start gap-4 p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors text-left"
+            >
+              <RefreshCw size={22} className="text-purple-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-white font-medium">Fresh plan</p>
+                <p className="text-slate-400 text-xs mt-0.5">Start from scratch — describe your goals and AI builds the week</p>
+              </div>
+            </button>
+            <button
+              onClick={openContinueMode}
+              disabled={loadingCarryover}
+              className="w-full flex items-start gap-4 p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors text-left disabled:opacity-60"
+            >
+              <Copy size={22} className="text-blue-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-white font-medium">Continue from last week</p>
+                <p className="text-slate-400 text-xs mt-0.5">Carry over incomplete tasks + AI predicts new ones for this week</p>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showCreator && planMode !== null && (
         <WeekPlanCreator
           userId={userId}
           weekPlan={weekPlan}
           categories={categories}
-          onClose={() => setShowCreator(false)}
+          focusHint={reviewFocusHint}
+          carryoverItems={planMode === 'continue' ? carryoverItems : []}
+          onClose={() => { setShowCreator(false); setPlanMode(null); setCarryoverItems([]); setReviewFocusHint('') }}
           onItemsCreated={onAIItemsCreated}
+        />
+      )}
+
+      {/* Week review panel */}
+      {showReview && (
+        <WeekReviewPanel
+          weekStart={weekStart}
+          weekEnd={weekEnd}
+          weekPlanId={weekPlan?.id}
+          profileName={profileName}
+          dailyItems={dailyItems}
+          categories={categories}
+          onClose={() => setShowReview(false)}
+          onGenerateNewPlan={handleReviewGenerateNewPlan}
         />
       )}
     </div>

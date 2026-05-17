@@ -40,6 +40,8 @@ WEEKLY PLAN → DAILY VIEW (Today) → STATS
 | TASK-028 Prayer notifications | ❌ Missing |
 | TASK-029 Past-day view | ✅ Done |
 | TASK-030 PWA | ❌ Missing |
+| TASK-031 Week review & AI report | ✅ Done |
+| TASK-032 Configurable week start/end | ✅ Done |
 
 ---
 
@@ -174,6 +176,33 @@ Navigate forward/backward through the current week from the Today view using pre
 - [x] **Color Picker** — click the color swatch to open a popover with 12 preset color swatches; native color picker always available for any custom hex color; selected swatch is highlighted/scaled
 - [x] **Live preview chip** — new-category form shows a styled badge preview (`{icon} {name}`) as you type, using the chosen color before saving
 - [x] Replaces raw `<input type="color">` and plain emoji text inputs; changes save to DB immediately on selection
+
+---
+
+### Phase 15 — Week Review & Configurable Week Boundaries ✅
+
+**Goal:** Let the user evaluate their week's progress from the Week Grid, receive an AI-generated report on what went well and what needs focus, and optionally generate a new week plan — all with configurable week start/end days.
+
+#### 15a — Configurable Week Start & End
+- [ ] Add `week_start_day` (0 = Sunday … 6 = Saturday, default 0) and `week_end_day` (derived or explicit) columns to the `profiles` table (migration: `005_week_config.sql`)
+- [ ] Settings page — new **"Week"** section: "Week starts on" dropdown (Sun / Mon / Sat); saved to `profiles` immediately
+- [ ] All places that compute "current week" (`/week`, `/today` day nav, `/stats`, distribute-week API) must respect this setting instead of hardcoding Monday as the start
+
+#### 15b — Week Evaluation Panel
+- [ ] **"Evaluate Week" button** in the Week Grid header (top-right, next to "Generate Week Plan"); only active once at least one day in the displayed week has passed
+- [ ] Clicking it opens a slide-over / modal panel titled **"Week Review"** with three sections:
+  1. **Progress snapshot** — auto-computed stats: tasks completed vs. planned, prayer completion %, bonus tasks done, total XP earned, total time tracked; shown as clean stat cards
+  2. **AI Report** — calls `POST /api/claude/week-review`; Claude Haiku receives the week's `daily_items` (title, category, priority, done status, actual_minutes, is_bonus) and returns:
+     - 2–3 sentences on overall performance
+     - Top 2–3 **focus areas** for next week (based on low-completion categories or missed priorities)
+     - 1 motivational line
+  - Report streams into the panel with a loading skeleton; rendered as formatted text
+  3. **Next Step** — two buttons: **"Generate New Week Plan"** (pre-fills the existing WeekPlanCreator with the AI's focus areas as context) and **"Close"**
+- [ ] `POST /api/claude/week-review` route — accepts `{ items: DailyItem[], weekStart: string, weekEnd: string, profile: { name, categories } }`; streams a structured JSON response `{ summary, focusAreas: string[], motivation }`
+
+#### 15c — "Generate New Week Plan" Pre-fill
+- [ ] When the user clicks "Generate New Week Plan" from the review panel, the WeekPlanCreator opens pre-populated with a short context string derived from the AI focus areas (e.g. "Focus more on: PhD, Sports")
+- [ ] The existing `/api/claude/weekly-plan` prompt is extended to accept an optional `focusHint` field and weave it into the plan generation instructions
 
 ---
 

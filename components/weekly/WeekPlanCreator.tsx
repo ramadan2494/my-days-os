@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Category, WeekPlan, WeeklyItem } from '@/lib/supabase/types'
+import { CarryoverItem } from '@/app/(app)/week/WeekPageClient'
 import { createClient } from '@/lib/supabase/client'
 import { X, Sparkles, Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -21,6 +22,8 @@ interface Props {
   userId: string
   weekPlan: WeekPlan | null
   categories: Category[]
+  focusHint?: string
+  carryoverItems?: CarryoverItem[]
   onClose: () => void
   onItemsCreated: (items: (WeeklyItem & { categories?: Category })[]) => void
 }
@@ -29,10 +32,13 @@ export default function WeekPlanCreator({
   userId,
   weekPlan,
   categories,
+  focusHint = '',
+  carryoverItems = [],
   onClose,
   onItemsCreated,
 }: Props) {
   const [tab, setTab] = useState<'ai' | 'manual'>('ai')
+  const [carried, setCarried] = useState<CarryoverItem[]>(carryoverItems)
   const [topics, setTopics] = useState<Record<string, string>>({})
   const [hoursPerWeek, setHoursPerWeek] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
@@ -56,8 +62,8 @@ export default function WeekPlanCreator({
         return { category_id: catId, category_name: cat?.name ?? '', topic, hours_per_week: Number(hoursPerWeek[catId]) || undefined }
       })
 
-    if (items.length === 0) {
-      toast.error('Add at least one topic')
+    if (items.length === 0 && carried.length === 0) {
+      toast.error('Add at least one topic or carry over tasks')
       return
     }
 
@@ -70,6 +76,8 @@ export default function WeekPlanCreator({
         body: JSON.stringify({
           week_start: weekPlan?.week_start ?? new Date().toISOString().split('T')[0],
           items,
+          carryoverItems: carried.length > 0 ? carried : undefined,
+          ...(focusHint ? { focusHint } : {}),
         }),
       })
       const data = await res.json()
@@ -87,7 +95,7 @@ export default function WeekPlanCreator({
     if (!preview || !weekPlan) return
     setLoading(true)
     try {
-      const rows = preview.map((t) => ({
+      const newRows = preview.map((t) => ({
         user_id: userId,
         week_plan_id: weekPlan.id,
         category_id: t.category_id,
@@ -96,9 +104,18 @@ export default function WeekPlanCreator({
         target_days: 1,
         priority: t.priority ?? 'medium',
       }))
+      const carriedRows = carried.map((c) => ({
+        user_id: userId,
+        week_plan_id: weekPlan.id,
+        category_id: c.category_id,
+        title: c.title,
+        description: null,
+        target_days: 1,
+        priority: c.priority,
+      }))
       const { data, error } = await supabase
         .from('weekly_items')
-        .insert(rows)
+        .insert([...carriedRows, ...newRows])
         .select('*, categories(*)')
       if (error) {
         toast.error(error.message)
@@ -182,6 +199,39 @@ export default function WeekPlanCreator({
           {/* AI tab — topic entry */}
           {tab === 'ai' && !preview && (
             <>
+              {focusHint && (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3 text-xs text-amber-300">
+                  <span className="font-semibold">From your week review:</span> {focusHint}
+                </div>
+              )}
+
+              {/* Carried over incomplete tasks */}
+              {carried.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">
+                    Carried from last week ({carried.length})
+                  </p>
+                  {carried.map((item) => {
+                    const cat = categories.find((c) => c.id === item.category_id)
+                    return (
+                      <div key={item.id} className="flex items-center gap-3 p-3 bg-slate-800 border border-slate-700 rounded-xl">
+                        <span className="text-base">{cat?.icon ?? '📌'}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-white truncate">{item.title}</p>
+                          <p className="text-xs text-slate-500">{item.category_name} · {item.priority}</p>
+                        </div>
+                        <button
+                          onClick={() => setCarried((prev) => prev.filter((c) => c.id !== item.id))}
+                          className="text-slate-600 hover:text-red-400 transition-colors flex-shrink-0"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
               <p className="text-slate-400 text-sm">
                 Describe your goals for each category. AI will create specific tasks spread across
                 the week.

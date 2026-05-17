@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import StatsPageClient from './StatsPageClient'
+import { getWeekStart } from '@/lib/week'
 
 export default async function StatsPage() {
   const supabase = await createClient()
@@ -9,8 +10,14 @@ export default async function StatsPage() {
   } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const today = new Date().toISOString().split('T')[0]
-  const sevenDaysAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+  const weekStartDay: number = profile?.week_start_day ?? 0
+
+  const weekStart = getWeekStart(new Date(), weekStartDay)
+  const weekEnd = new Date(weekStart + 'T12:00:00')
+  weekEnd.setDate(weekEnd.getDate() + 6)
+  const sevenDaysAgo = weekStart
+  const today = weekEnd.toISOString().split('T')[0]
 
   const [profileRes, badgesRes, xpLogRes, dailyItemsRes] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', user.id).single(),
