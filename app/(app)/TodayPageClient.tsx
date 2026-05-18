@@ -118,6 +118,8 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
   const [timerSeconds, setTimerSeconds] = useState(0)
   const timerStartRef = useRef<number>(0)
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [editingItem, setEditingItem] = useState<(DailyItem & { categories?: Category }) | null>(null)
+  const [categories, setCategories] = useState<Category[]>([])
 
   // Compute client-side local date (server runs UTC so it may be off by ±1 day)
   const todayStr = getLocalDateStr()
@@ -145,6 +147,19 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
   }, [])
 
   const [dateReady, setDateReady] = useState(true)
+
+  // Load categories for the edit modal
+  useEffect(() => {
+    supabase
+      .from('categories')
+      .select('*')
+      .eq('user_id', userId)
+      .neq('name', 'Prayers')
+      .order('name')
+      .then(({ data }) => { if (data) setCategories(data) })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (!params.has('date') && date !== todayStr) {
@@ -237,6 +252,24 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
     const { error } = await supabase.from('daily_items').update({ actual_minutes: newMinutes }).eq('id', itemId)
     if (error) { toast.error('Failed to save time'); return }
     setItems((prev) => prev.map((it) => it.id === itemId ? { ...it, actual_minutes: newMinutes } : it))
+  }
+
+  async function handleSaveEdit(id: string, updates: { title: string; link: string | null; category_id: string }) {
+    const item = items.find((it) => it.id === id)
+    if (!item) return
+    const { data, error } = await supabase
+      .from('daily_items')
+      .update(updates)
+      .eq('id', id)
+      .select('*, categories(*)')
+      .single()
+    if (error) { toast.error('Failed to save changes'); return }
+    if (item.weekly_item_id) {
+      await supabase.from('weekly_items').update({ title: updates.title }).eq('id', item.weekly_item_id)
+    }
+    setItems((prev) => prev.map((it) => it.id === id ? data : it))
+    setEditingItem(null)
+    toast.success('Task updated')
   }
 
   function spawnFloat(amount: number) {
@@ -652,6 +685,7 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
           onStartTimer={startTimer}
           onStopTimer={stopTimer}
           onEditTime={saveEditedTime}
+          onEdit={setEditingItem}
         />
       )}
 
@@ -663,17 +697,23 @@ export default function TodayPageClient({ userId, profile, initialItems, date }:
         date={date}
         onAdd={(item) => setItems((prev) => [...prev, item])}
         onDelete={(id) => setItems((prev) => prev.filter((it) => it.id !== id))}
-        onRename={(id, newTitle) =>
-          setItems((prev) =>
-            prev.map((it) => (it.id === id ? { ...it, title: newTitle } : it)),
-          )
-        }
+        onEdit={setEditingItem}
         activeTimerId={activeTimerId}
         timerSeconds={timerSeconds}
         onStartTimer={startTimer}
         onStopTimer={stopTimer}
         onEditTime={saveEditedTime}
       />
+
+      {/* Edit Task Modal */}
+      {editingItem && (
+        <EditItemModal
+          item={editingItem}
+          categories={categories}
+          onSave={handleSaveEdit}
+          onClose={() => setEditingItem(null)}
+        />
+      )}
     </div>
   )
 }
@@ -896,6 +936,7 @@ function TaskRow({
   onStartTimer,
   onStopTimer,
   onEditTime,
+  onEdit,
 }: {
   item: DailyItem & { categories?: Category }
   onToggle: (item: DailyItem & { categories?: Category }) => void
@@ -904,6 +945,7 @@ function TaskRow({
   onStartTimer: () => void
   onStopTimer: () => void
   onEditTime: (id: string, minutes: number) => void
+  onEdit: (item: DailyItem & { categories?: Category }) => void
 }) {
   const router = useRouter()
   const [editOpen, setEditOpen] = useState(false)
@@ -987,7 +1029,7 @@ function TaskRow({
             className="text-[10px] font-mono text-slate-500 hover:text-orange-400 flex-shrink-0 flex items-center gap-0.5 group/time transition-colors"
           >
             {formatMins(item.actual_minutes)}
-            <Pencil size={9} className="opacity-0 group-hover/time:opacity-100 transition-opacity" />
+            <Clock size={9} className="opacity-0 group-hover/time:opacity-100 transition-opacity" />
           </button>
         )
       ) : (
@@ -1014,7 +1056,7 @@ function TaskRow({
             title="Log time"
             className="opacity-0 group-hover/row:opacity-100 p-1 rounded-lg text-slate-500 hover:text-orange-400 hover:bg-orange-500/10 transition-all flex-shrink-0"
           >
-            <Pencil size={12} />
+            <Clock size={12} />
           </button>
         )
       )}
@@ -1023,6 +1065,13 @@ function TaskRow({
           +{item.xp_earned} XP
         </span>
       )}
+      <button
+        onClick={() => onEdit(item)}
+        title="Edit task"
+        className="opacity-0 group-hover/row:opacity-100 p-1 rounded-lg text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 transition-all flex-shrink-0"
+      >
+        <Pencil size={13} />
+      </button>
       {item.status !== 'done' && (
         isTimerActive ? (
           <div className="flex items-center gap-1 flex-shrink-0">
@@ -1070,6 +1119,7 @@ function TaskSections({
   onStartTimer,
   onStopTimer,
   onEditTime,
+  onEdit,
 }: {
   items: (DailyItem & { categories?: Category })[]
   onToggle: (item: DailyItem & { categories?: Category }) => void
@@ -1078,6 +1128,7 @@ function TaskSections({
   onStartTimer: (id: string) => void
   onStopTimer: () => void
   onEditTime: (id: string, minutes: number) => void
+  onEdit: (item: DailyItem & { categories?: Category }) => void
 }) {
   return (
     <div className="space-y-3">
@@ -1111,6 +1162,7 @@ function TaskSections({
                   onStartTimer={() => onStartTimer(item.id)}
                   onStopTimer={onStopTimer}
                   onEditTime={onEditTime}
+                  onEdit={onEdit}
                 />
               ))}
             </div>
@@ -1173,7 +1225,7 @@ function BonusTimeEdit({
         className="text-[10px] font-mono text-slate-500 hover:text-orange-400 flex-shrink-0 flex items-center gap-0.5 group/time transition-colors"
       >
         {formatMins(item.actual_minutes)}
-        <Pencil size={9} className="opacity-0 group-hover/time:opacity-100 transition-opacity" />
+        <Clock size={9} className="opacity-0 group-hover/time:opacity-100 transition-opacity" />
       </button>
     )
   }
@@ -1182,7 +1234,7 @@ function BonusTimeEdit({
     <button onClick={openEdit} title="Log time"
       className="opacity-0 group-hover/row:opacity-100 p-1 rounded-lg text-slate-500 hover:text-orange-400 hover:bg-orange-500/10 transition-all flex-shrink-0"
     >
-      <Pencil size={12} />
+      <Clock size={12} />
     </button>
   )
 }
@@ -1195,7 +1247,7 @@ function BonusSection({
   date,
   onAdd,
   onDelete,
-  onRename,
+  onEdit,
   activeTimerId,
   timerSeconds,
   onStartTimer,
@@ -1208,7 +1260,7 @@ function BonusSection({
   date: string
   onAdd: (item: DailyItem & { categories?: Category }) => void
   onDelete: (id: string) => void
-  onRename: (id: string, newTitle: string) => void
+  onEdit: (item: DailyItem & { categories?: Category }) => void
   activeTimerId: string | null
   timerSeconds: number
   onStartTimer: (id: string) => void
@@ -1223,9 +1275,6 @@ function BonusSection({
   const [categoryId, setCategoryId] = useState('')
   const [categories, setCategories] = useState<Category[]>([])
   const [adding, setAdding] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editTitle, setEditTitle] = useState('')
-  const editRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     supabase
@@ -1278,21 +1327,6 @@ function BonusSection({
     toast('🗑 Bonus task removed', { style: { background: '#1e293b', color: '#94a3b8' } })
   }
 
-  function startEdit(item: DailyItem) {
-    setEditingId(item.id)
-    setEditTitle(item.title)
-    setTimeout(() => editRef.current?.focus(), 0)
-  }
-
-  async function saveEdit(id: string) {
-    const trimmed = editTitle.trim()
-    setEditingId(null)
-    if (!trimmed) return
-    const { error } = await supabase.from('daily_items').update({ title: trimmed }).eq('id', id)
-    if (error) { toast.error('Failed to rename'); return }
-    onRename(id, trimmed)
-  }
-
   return (
     <div className="bg-slate-900 border border-yellow-500/30 rounded-2xl overflow-hidden" style={{ borderLeftColor: '#eab308', borderLeftWidth: 3 }}>
       <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-800/60">
@@ -1323,7 +1357,6 @@ function BonusSection({
             className={cn(
               'group/row flex items-center gap-2 p-3 bg-yellow-500/5 border border-yellow-500/10 rounded-xl transition-all',
               item.status === 'done' && 'opacity-55',
-              editingId === item.id && 'ring-1 ring-yellow-500/40 bg-slate-800',
             )}
           >
             <button
@@ -1338,21 +1371,8 @@ function BonusSection({
               {item.status === 'done' ? <CheckCircle size={18} /> : <Circle size={18} />}
             </button>
 
-            {/* Title — inline edit or display */}
-            {editingId === item.id ? (
-              <input
-                ref={editRef}
-                type="text"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') saveEdit(item.id)
-                  if (e.key === 'Escape') setEditingId(null)
-                }}
-                onBlur={() => saveEdit(item.id)}
-                className="flex-1 bg-transparent border-none outline-none text-white text-sm min-w-0"
-              />
-            ) : item.link && item.status !== 'done' ? (
+            {/* Title */}
+            {item.link && item.status !== 'done' ? (
               <a
                 href={item.link}
                 target="_blank"
@@ -1371,24 +1391,22 @@ function BonusSection({
             <span className="text-[10px] text-yellow-500 font-bold flex-shrink-0">⭐</span>
 
             {/* Hover actions: edit + delete */}
-            {editingId !== item.id && (
-              <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
-                <button
-                  onClick={() => startEdit(item)}
-                  title="Rename"
-                  className="p-1 rounded-lg text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
-                >
-                  <Pencil size={12} />
-                </button>
-                <button
-                  onClick={() => deleteBonus(item.id)}
-                  title="Delete bonus task"
-                  className="p-1 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            )}
+            <div className="opacity-0 group-hover/row:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-opacity">
+              <button
+                onClick={() => onEdit(item)}
+                title="Edit task"
+                className="p-1 rounded-lg text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
+              >
+                <Pencil size={12} />
+              </button>
+              <button
+                onClick={() => deleteBonus(item.id)}
+                title="Delete bonus task"
+                className="p-1 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+              >
+                <X size={12} />
+              </button>
+            </div>
 
             <BonusTimeEdit item={item} onEditTime={onEditTime} />
             {item.status === 'done' && item.xp_earned > 0 && (
@@ -1476,6 +1494,110 @@ function BonusSection({
             </div>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Edit Item Modal ──────────────────────────────────────────────────────────
+function EditItemModal({
+  item,
+  categories,
+  onSave,
+  onClose,
+}: {
+  item: DailyItem & { categories?: Category }
+  categories: Category[]
+  onSave: (id: string, updates: { title: string; link: string | null; category_id: string }) => void
+  onClose: () => void
+}) {
+  const [title, setTitle] = useState(item.title)
+  const [link, setLink] = useState(item.link ?? '')
+  const [categoryId, setCategoryId] = useState(item.category_id)
+
+  function handleSave() {
+    if (!title.trim()) return
+    onSave(item.id, {
+      title: title.trim(),
+      link: link.trim() || null,
+      category_id: categoryId,
+    })
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-md space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-white">Edit Task</h3>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block">Title</label>
+            <input
+              autoFocus
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') onClose() }}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+
+          {categories.length > 0 && (
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block">Category</label>
+              <select
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+              >
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block">Link (optional)</label>
+            <input
+              type="url"
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              placeholder="https://…"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={handleSave}
+            disabled={!title.trim()}
+            className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition-colors"
+          >
+            Save
+          </button>
+          <button
+            onClick={onClose}
+            className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   )

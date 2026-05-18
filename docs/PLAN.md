@@ -42,6 +42,7 @@ WEEKLY PLAN → DAILY VIEW (Today) → STATS
 | TASK-030 PWA | ❌ Missing |
 | TASK-031 Week review & AI report | ✅ Done |
 | TASK-032 Configurable week start/end | ✅ Done |
+| TASK-033 Today view task editing | ✅ Done |
 
 ---
 
@@ -164,10 +165,17 @@ Navigate forward/backward through the current week from the Today view using pre
 
 - [x] **Bonus tasks are graded separately** — Day Progress bar counts only main (non-prayer, non-bonus) tasks; bonus tasks have their own `done/total` counter inside the Bonus section
 - [x] **Delete bonus tasks** — hover any bonus row to reveal ✕ button; removes from DB and UI instantly
-- [x] **Edit bonus tasks** — hover any bonus row to reveal ✎ button; inline rename, Enter to save / Escape to cancel
+- [x] **Edit bonus tasks** — hover any bonus row to reveal ✎ button; opens full edit modal (title, category, link)
 - [x] **Week grid — delete items** — hover any task chip to reveal 🗑 button; deletes the `daily_item` and its parent `weekly_item`
 - [x] **Week grid — mark as bonus when adding** — quick-add form has a "⭐ Mark as bonus" toggle; sets `is_bonus: true` on the `daily_item`; bonus items show a ⭐ icon badge in the grid
 - [x] Week grid drag & drop was already working; delete + edit + bonus marking complete the full CRUD cycle
+
+## Phase 13b — Today View Task Editing ✅
+
+- [x] **Edit any task from Today view** — hover any task row (both main and bonus) to reveal a ✎ pencil button
+- [x] **Edit modal** — opens a centered modal with title input, category dropdown, and optional link field; saves to `daily_items` and syncs title to parent `weekly_item` if linked
+- [x] Consistent UX between main tasks and bonus tasks — both use the same `EditItemModal` component
+- [x] Categories loaded once per page from DB; modal re-uses them without extra fetches
 
 
 ## Phase 14 — Settings Category Visual Pickers ✅
